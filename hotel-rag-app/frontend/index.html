@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CleanSweep Ops — Workforce Insights</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#12181f; --ink-soft:#2a343f; --paper:#f5f6f4; --card:#ffffff;
+    --line:#e2e4e0; --teal:#0e7c66; --teal-soft:#e3f3ee; --teal-deep:#0a5c4c;
+    --amber:#c1791a; --red:#b3403a; --muted:#6b7280;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);}
+  #app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:64px 1fr;height:100vh;}
+
+  /* topbar */
+  .topbar{grid-column:1/3;display:flex;align-items:center;justify-content:space-between;
+    padding:0 24px;background:var(--ink);color:#fff;border-bottom:1px solid #000;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:0.2px;}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(14,124,102,0.35);}
+  .role-switch{display:flex;align-items:center;gap:14px;font-size:13px;}
+  .role-switch select{background:#1e2732;color:#fff;border:1px solid #3a4552;border-radius:8px;padding:7px 10px;font-family:inherit;font-size:13px;}
+  .role-tag{background:var(--teal);color:#fff;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+
+  /* sidebar */
+  .sidebar{background:var(--card);border-right:1px solid var(--line);padding:20px 16px;overflow-y:auto;}
+  .side-section{margin-bottom:26px;}
+  .side-label{font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--muted);font-weight:600;margin-bottom:10px;}
+  .metric-card{background:var(--teal-soft);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;}
+  .metric-card .val{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:500;color:var(--teal-deep);}
+  .metric-card .lbl{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .metric-card.warn{background:#fbeee0;}
+  .metric-card.warn .val{color:var(--amber);}
+  .suggested-q{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);
+    border-radius:9px;padding:9px 11px;margin-bottom:7px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;transition:.15s;}
+  .suggested-q:hover{border-color:var(--teal);background:var(--teal-soft);}
+
+  /* main / chat */
+  main{display:flex;flex-direction:column;overflow:hidden;}
+  #chatlog{flex:1;overflow-y:auto;padding:26px 32px;display:flex;flex-direction:column;gap:18px;}
+  .msg{max-width:720px;line-height:1.55;font-size:14.5px;}
+  .msg.user{align-self:flex-end;background:var(--ink);color:#fff;padding:11px 15px;border-radius:14px 14px 3px 14px;}
+  .msg.assistant{align-self:flex-start;background:var(--card);border:1px solid var(--line);padding:13px 16px;border-radius:14px 14px 14px 3px;}
+  .msg.assistant .tools{margin-top:8px;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px;}
+  .msg.assistant .tools span{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:2px 6px;margin-right:5px;font-family:'IBM Plex Mono',monospace;}
+  .chart-wrap{align-self:flex-start;max-width:560px;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:16px;margin-top:-6px;}
+  .chart-wrap canvas{max-height:260px;}
+  .typing{align-self:flex-start;color:var(--muted);font-size:13px;font-style:italic;}
+
+  #composer{border-top:1px solid var(--line);padding:16px 32px;background:var(--card);}
+  #composer form{display:flex;gap:10px;}
+  #composer input{flex:1;padding:12px 14px;border-radius:10px;border:1px solid var(--line);font-size:14px;font-family:inherit;background:var(--paper);}
+  #composer input:focus{outline:2px solid var(--teal);outline-offset:-1px;}
+  #composer button{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:0 20px;font-weight:600;cursor:pointer;font-size:14px;}
+  #composer button:disabled{background:#a9b3ae;cursor:default;}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:8px;}
+
+  .empty-state{margin:auto;text-align:center;color:var(--muted);max-width:420px;}
+  .empty-state h2{color:var(--ink);font-size:19px;margin-bottom:8px;}
+
+  .banner{background:#fbeee0;border:1px solid #ecd2ab;color:#7a4a10;font-size:12.5px;padding:10px 14px;border-radius:10px;margin:0 32px 14px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span> CleanSweep Ops · Workforce Insights</div>
+    <div class="role-switch">
+      <label>Role
+        <select id="roleSelect">
+          <option value="supervisor">Hotel supervisor</option>
+          <option value="head_supervisor">Head of supervisors</option>
+        </select>
+      </label>
+      <label id="hotelLabel">Hotel
+        <select id="hotelSelect"></select>
+      </label>
+      <span class="role-tag" id="roleTag">Supervisor</span>
+    </div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="side-section">
+      <div class="side-label">This week at a glance</div>
+      <div id="dashCards"><div class="metric-card"><div class="val">…</div><div class="lbl">Loading</div></div></div>
+    </div>
+    <div class="side-section">
+      <div class="side-label">Ask about</div>
+      <button class="suggested-q" data-q="How many total hours were worked in cleaning vs checking this week?">Total hours this week</button>
+      <button class="suggested-q" data-q="Who are the top 5 workers by hours this week?">Top workers this week</button>
+      <button class="suggested-q" data-q="What is our absentee rate this week and who has been absent the most?">Absentee rate</button>
+      <button class="suggested-q" data-q="What is our inspection pass rate and which checkers have done the most inspections?">Inspection pass rate</button>
+      <button class="suggested-q" data-q="What happens if a worker exceeds 10 hours of actual work in a single day, according to policy?">Max hours policy</button>
+      <button class="suggested-q" data-q="Compare all hotels on total hours, headcount, absentee rate and inspection pass rate.">Compare hotels</button>
+    </div>
+  </aside>
+
+  <main>
+    <div id="chatlog">
+      <div class="empty-state" id="emptyState">
+        <h2>Ask a question about your workforce</h2>
+        <p>Try "top workers this week", "absentee rate trend", or "are we compliant with the max hours policy?" — I can query live numbers, check policy documents, or both.</p>
+      </div>
+    </div>
+    <div id="composer">
+      <form id="chatForm">
+        <input id="chatInput" type="text" placeholder="Ask about hours, staffing, quality, or policy…" autocomplete="off" />
+        <button id="sendBtn" type="submit">Ask</button>
+      </form>
+      <div class="hint">Answers come from live workforce data (via a metrics tool) and agency policy documents (via retrieval) — the agent picks whichever fits your question.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = "";
+let HOTELS = [];
+let history = [];
+
+const roleSelect = document.getElementById('roleSelect');
+const hotelSelect = document.getElementById('hotelSelect');
+const hotelLabel = document.getElementById('hotelLabel');
+const roleTag = document.getElementById('roleTag');
+const chatlog = document.getElementById('chatlog');
+const emptyState = document.getElementById('emptyState');
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+const dashCards = document.getElementById('dashCards');
+
+function currentScope(){
+  const role = roleSelect.value;
+  const hotel_id = role === 'supervisor' ? parseInt(hotelSelect.value) : (hotelSelect.value ? parseInt(hotelSelect.value) : null);
+  const hotel = HOTELS.find(h => h.hotel_id === hotel_id);
+  return { role, hotel_id, hotel_name: hotel ? hotel.name : null };
+}
+
+async function loadHotels(){
+  const res = await fetch(`${API}/api/hotels`);
+  HOTELS = await res.json();
+  renderHotelOptions();
+}
+
+function renderHotelOptions(){
+  const role = roleSelect.value;
+  hotelSelect.innerHTML = '';
+  if (role === 'head_supervisor') {
+    const allOpt = document.createElement('option');
+    allOpt.value = ''; allOpt.textContent = 'All hotels';
+    hotelSelect.appendChild(allOpt);
+  }
+  HOTELS.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h.hotel_id; opt.textContent = `${h.name} (${h.city})`;
+    hotelSelect.appendChild(opt);
+  });
+  roleTag.textContent = role === 'supervisor' ? 'Supervisor' : 'Head of supervisors';
+}
+
+roleSelect.addEventListener('change', () => { renderHotelOptions(); loadDashboard(); });
+hotelSelect.addEventListener('change', loadDashboard);
+
+async function loadDashboard(){
+  const {role, hotel_id} = currentScope();
+  dashCards.innerHTML = `<div class="metric-card"><div class="val">…</div><div class="lbl">Loading</div></div>`;
+  try {
+    const res = await fetch(`${API}/api/dashboard`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({user_role: role, hotel_id, days: 7})
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const d = await res.json();
+    renderDashboard(d, role);
+  } catch(e){
+    dashCards.innerHTML = `<div class="metric-card warn"><div class="val">—</div><div class="lbl">Could not load dashboard</div></div>`;
+  }
+}
+
+function renderDashboard(d, role){
+  const totalHours = d.total_hours_by_hotel.reduce((s,r)=>s+r.total_hours,0).toFixed(0);
+  const headcount = d.headcount.reduce((s,r)=>s+r.active_headcount,0);
+  const avgAbsentee = (d.absentee.by_hotel.reduce((s,r)=>s+r.absentee_rate_pct,0)/d.absentee.by_hotel.length).toFixed(1);
+  const avgPass = d.inspections.by_hotel.filter(r=>r.pass_rate_pct!=null);
+  const passRate = avgPass.length ? (avgPass.reduce((s,r)=>s+r.pass_rate_pct,0)/avgPass.length).toFixed(1) : '—';
+
+  dashCards.innerHTML = `
+    <div class="metric-card"><div class="val">${totalHours}</div><div class="lbl">Total hours, last 7 days</div></div>
+    <div class="metric-card"><div class="val">${headcount}</div><div class="lbl">Active workers</div></div>
+    <div class="metric-card ${avgAbsentee > 8 ? 'warn' : ''}"><div class="val">${avgAbsentee}%</div><div class="lbl">Absentee rate</div></div>
+    <div class="metric-card ${passRate !== '—' && passRate < 90 ? 'warn' : ''}"><div class="val">${passRate}%</div><div class="lbl">Inspection pass rate</div></div>
+  `;
+}
+
+function addMessage(role, text, extra){
+  emptyState.style.display = 'none';
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = text.replace(/\n/g,'<br>');
+  if (extra && extra.tools_used && extra.tools_used.length){
+    const t = document.createElement('div');
+    t.className = 'tools';
+    t.innerHTML = 'Tools used: ' + extra.tools_used.map(x=>`<span>${x}</span>`).join('');
+    div.appendChild(t);
+  }
+  chatlog.appendChild(div);
+  chatlog.scrollTop = chatlog.scrollHeight;
+  return div;
+}
+
+function addChart(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'chart-wrap';
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  chatlog.appendChild(wrap);
+  chatlog.scrollTop = chatlog.scrollHeight;
+  new Chart(canvas, {
+    type: spec.chart_type,
+    data: {
+      labels: spec.labels,
+      datasets: [{
+        label: spec.series_label,
+        data: spec.values,
+        backgroundColor: ['#0e7c66','#c1791a','#2a343f','#6b8f7a','#b3403a','#7a9ea8','#c9a15a','#4c6b60'],
+        borderColor: '#0e7c66',
+        borderWidth: spec.chart_type === 'line' ? 2 : 1,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      plugins: { title: { display: true, text: spec.title, font: {size: 13} }, legend: { display: spec.chart_type === 'pie' } },
+      scales: spec.chart_type === 'pie' ? {} : { y: { beginAtZero: true } },
+      responsive: true,
+    }
+  });
+}
+
+chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const question = chatInput.value.trim();
+  if(!question) return;
+  ask(question);
+});
+
+document.querySelectorAll('.suggested-q').forEach(btn => {
+  btn.addEventListener('click', () => ask(btn.dataset.q));
+});
+
+async function ask(question){
+  chatInput.value = '';
+  sendBtn.disabled = true;
+  addMessage('user', question);
+  history.push({role:'user', content: question});
+
+  const typing = document.createElement('div');
+  typing.className = 'typing';
+  typing.textContent = 'Thinking through your data…';
+  chatlog.appendChild(typing);
+  chatlog.scrollTop = chatlog.scrollHeight;
+
+  const {role, hotel_id, hotel_name} = currentScope();
+  try {
+    const res = await fetch(`${API}/api/chat`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({question, user_role: role, hotel_id, hotel_name, history})
+    });
+    typing.remove();
+    if(!res.ok){
+      const err = await res.json().catch(()=>({detail: 'Request failed'}));
+      addMessage('assistant', `⚠ ${err.detail || 'Something went wrong.'}`);
+      return;
+    }
+    const data = await res.json();
+    addMessage('assistant', data.answer, data);
+    history.push({role:'assistant', content: data.answer});
+    if (data.chart) addChart(data.chart);
+  } catch(e){
+    typing.remove();
+    addMessage('assistant', '⚠ Could not reach the backend. Is the FastAPI server running?');
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+(async function init(){
+  await loadHotels();
+  await loadDashboard();
+})();
+</script>
+</body>
+</html>
