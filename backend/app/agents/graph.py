@@ -89,7 +89,11 @@ question needs both a policy check and current numbers, use both tool types befo
 
 You MUST use the real tool-calling mechanism to call tools. NEVER write a tool name or its
 JSON arguments as text in your reply — that does not run anything and the user sees no data.
-After the tools return, write a natural-language answer using their results."""
+After the tools return, write a natural-language answer using their results.
+
+If a tool returns an "error" field, quote that exact error message to the user instead of
+guessing or inventing a plausible-sounding cause — an invented explanation is actively
+misleading. If retrying with corrected arguments won't help, just report the error verbatim."""
 
 
 def build_agent(mcp_tools, role: str, client_id, client_name, supervisor_id=None):
