@@ -127,6 +127,8 @@ def dashboard(req: DashboardRequest):
 async def chat(req: ChatRequest):
     if req.user_role == "supervisor" and req.client_id is None:
         raise HTTPException(400, "supervisor requests require client_id")
+    if req.user_role == "team_supervisor" and req.supervisor_id is None:
+        raise HTTPException(400, "team_supervisor requests require supervisor_id")
     if not os.environ.get("GROQ_API_KEY"):
         raise HTTPException(
             500,
@@ -138,6 +140,7 @@ async def chat(req: ChatRequest):
             role=req.user_role,
             client_id=req.client_id,
             client_name=req.client_name,
+            supervisor_id=req.supervisor_id,
             history=[t.model_dump() for t in req.history],
         )
     except Exception as e:
