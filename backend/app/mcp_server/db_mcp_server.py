@@ -82,7 +82,16 @@ def run_metric_query(
                              supervisor_id=supervisor_id, days=days, limit=limit)
         return json.dumps(result, default=str)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        # Print the full traceback to stderr (captured in Railway's deploy
+        # logs) — the LLM only ever sees str(e), so without this the real
+        # cause of a failure is invisible from outside.
+        print(
+            f"run_metric_query failed: metric={metric} role={role} client_id={client_id} "
+            f"supervisor_id={supervisor_id} days={days}",
+            file=sys.stderr,
+        )
+        traceback.print_exc(file=sys.stderr)
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
 if __name__ == "__main__":
