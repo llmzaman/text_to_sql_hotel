@@ -1,6 +1,6 @@
 """
 SQLAlchemy ORM models implementing the conceptual schema:
-agencies -> hotels -> users -> shifts / tasks / inspections / leaves / rooms
+agencies -> clients -> users -> shifts / tasks / inspections / leaves / rooms
 """
 from datetime import datetime
 from sqlalchemy import (
@@ -18,12 +18,12 @@ class Agency(Base):
     contact_email = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    hotels = relationship("Hotel", back_populates="agency")
+    clients = relationship("Client", back_populates="agency")
 
 
-class Hotel(Base):
-    __tablename__ = "hotels"
-    hotel_id = Column(Integer, primary_key=True)
+class Client(Base):
+    __tablename__ = "clients"
+    client_id = Column(Integer, primary_key=True)
     agency_id = Column(Integer, ForeignKey("agencies.agency_id"))
     name = Column(String, nullable=False)
     city = Column(String)
@@ -31,15 +31,15 @@ class Hotel(Base):
     contract_start_date = Column(Date)
     status = Column(String, default="active")
 
-    agency = relationship("Agency", back_populates="hotels")
-    users = relationship("User", back_populates="hotel")
-    rooms = relationship("Room", back_populates="hotel")
+    agency = relationship("Agency", back_populates="clients")
+    users = relationship("User", back_populates="client")
+    rooms = relationship("Room", back_populates="client")
 
 
 class User(Base):
     __tablename__ = "users"
     user_id = Column(Integer, primary_key=True)
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     agency_id = Column(Integer, ForeignKey("agencies.agency_id"))
     full_name = Column(String, nullable=False)
     role = Column(String, nullable=False)  # supervisor | cleaner | checker | head_supervisor | admin
@@ -48,26 +48,26 @@ class User(Base):
     employment_status = Column(String, default="active")  # active | inactive | terminated
     hourly_rate = Column(Float)
 
-    hotel = relationship("Hotel", back_populates="users")
+    client = relationship("Client", back_populates="users")
     shifts = relationship("Shift", back_populates="user")
 
 
 class Room(Base):
     __tablename__ = "rooms"
     room_id = Column(Integer, primary_key=True)
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     room_number = Column(String, nullable=False)
     floor = Column(Integer)
     room_type = Column(String)  # standard | suite | deluxe
 
-    hotel = relationship("Hotel", back_populates="rooms")
+    client = relationship("Client", back_populates="rooms")
 
 
 class Shift(Base):
     __tablename__ = "shifts"
     shift_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id"))
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     work_date = Column(Date, nullable=False)
     clock_in_time = Column(DateTime)
     clock_out_time = Column(DateTime)
@@ -82,7 +82,7 @@ class Shift(Base):
 class Task(Base):
     __tablename__ = "tasks"
     task_id = Column(Integer, primary_key=True)
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     room_id = Column(Integer, ForeignKey("rooms.room_id"))
     assigned_to = Column(Integer, ForeignKey("users.user_id"))
     task_type = Column(String, nullable=False)  # cleaning | checking
@@ -98,7 +98,7 @@ class Inspection(Base):
     inspection_id = Column(Integer, primary_key=True)
     task_id = Column(Integer, ForeignKey("tasks.task_id"))
     checker_id = Column(Integer, ForeignKey("users.user_id"))
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     result = Column(String)  # pass | fail | needs_rework
     score = Column(Float)  # 0-100
     inspected_at = Column(DateTime)
@@ -108,7 +108,7 @@ class Leave(Base):
     __tablename__ = "leaves"
     leave_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id"))
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     date_from = Column(Date)
     date_to = Column(Date)
     reason = Column(String)

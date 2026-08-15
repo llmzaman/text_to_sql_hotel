@@ -2,11 +2,16 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 
-class HotelOut(BaseModel):
-    hotel_id: int
+class ClientOut(BaseModel):
+    client_id: int
     name: str
     city: Optional[str] = None
     room_count: Optional[int] = None
+
+
+class SupervisorOut(BaseModel):
+    supervisor_id: int
+    name: str
 
 
 class ChatTurnIn(BaseModel):
@@ -16,9 +21,10 @@ class ChatTurnIn(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str
-    user_role: Literal["supervisor", "head_supervisor"]
-    hotel_id: Optional[int] = None
-    hotel_name: Optional[str] = None
+    user_role: Literal["supervisor", "team_supervisor", "head_supervisor"]
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    supervisor_id: Optional[int] = None
     history: List[ChatTurnIn] = []
 
 
@@ -37,6 +43,7 @@ class ChatResponse(BaseModel):
 
 
 class DashboardRequest(BaseModel):
-    user_role: Literal["supervisor", "head_supervisor"]
-    hotel_id: Optional[int] = None
+    user_role: Literal["supervisor", "team_supervisor", "head_supervisor"]
+    client_id: Optional[int] = None
+    supervisor_id: Optional[int] = None
     days: int = 7

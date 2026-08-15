@@ -6,14 +6,15 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.database import SessionLocal
-from app.models import Hotel
-from app.metrics import run_metric, METRIC_GLOSSARY
-from app.schemas import ChatRequest, ChatResponse, DashboardRequest, HotelOut
+from app.metrics import run_metric, supervisor_client_ids, METRIC_GLOSSARY
+from app.schemas import ChatRequest, ChatResponse, DashboardRequest, ClientOut, SupervisorOut
 from app.agents.runner import answer_question
+from app import chat_history
 
-app = FastAPI(title="Hotel Workforce Agentic RAG API")
+app = FastAPI(title="Client Workforce Agentic RAG API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,14 +29,58 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/api/hotels", response_model=list[HotelOut])
-def list_hotels():
+@app.get("/api/clients", response_model=list[ClientOut])
+def list_clients():
     db = SessionLocal()
     try:
-        hotels = db.query(Hotel).all()
+        rows = db.execute(text("""
+            SELECT c.id, c."clientName", c."clientCity", COUNT(r.id) AS room_count
+            FROM client c LEFT JOIN rooms r ON r."clientId" = c.id
+            WHERE c."deletedAt" IS NULL
+            GROUP BY c.id, c."clientName", c."clientCity"
+            ORDER BY c.id
+        """)).all()
         return [
-            HotelOut(hotel_id=h.hotel_id, name=h.name, city=h.city, room_count=h.room_count)
-            for h in hotels
+            ClientOut(client_id=cid, name=name, city=city, room_count=room_count)
+            for cid, name, city, room_count in rows
+        ]
+    finally:
+        db.close()
+
+
+@app.get("/api/supervisors", response_model=list[SupervisorOut])
+def list_supervisors():
+    """Supervisors who have at least one client assignment in supervisor_client."""
+    db = SessionLocal()
+    try:
+        rows = db.execute(text("""
+            SELECT DISTINCT u.id, u."firstName" || ' ' || u."lastName" AS name
+            FROM supervisor_client sc JOIN users u ON u.id = sc."supervisorId"
+            ORDER BY name
+        """)).all()
+        return [SupervisorOut(supervisor_id=sid, name=name) for sid, name in rows]
+    finally:
+        db.close()
+
+
+@app.get("/api/supervisors/{supervisor_id}/clients", response_model=list[ClientOut])
+def supervisor_clients(supervisor_id: int):
+    """Clients a given supervisor is assigned to, per supervisor_client."""
+    db = SessionLocal()
+    try:
+        client_ids = supervisor_client_ids(db, supervisor_id)
+        if not client_ids:
+            return []
+        rows = db.execute(text("""
+            SELECT c.id, c."clientName", c."clientCity", COUNT(r.id) AS room_count
+            FROM client c LEFT JOIN rooms r ON r."clientId" = c.id
+            WHERE c.id = ANY(:ids) AND c."deletedAt" IS NULL
+            GROUP BY c.id, c."clientName", c."clientCity"
+            ORDER BY c.id
+        """), {"ids": client_ids}).all()
+        return [
+            ClientOut(client_id=cid, name=name, city=city, room_count=room_count)
+            for cid, name, city, room_count in rows
         ]
     finally:
         db.close()
@@ -51,50 +96,71 @@ def dashboard(req: DashboardRequest):
     """Fast, non-agentic path for the dashboard summary cards — calls the
     same semantic-layer metric functions the chat agent uses, but directly,
     so the dashboard loads instantly without an LLM round trip."""
-    if req.user_role == "supervisor" and req.hotel_id is None:
-        raise HTTPException(400, "supervisor requests require hotel_id")
+    if req.user_role == "supervisor" and req.client_id is None:
+        raise HTTPException(400, "supervisor requests require client_id")
+    if req.user_role == "team_supervisor" and req.supervisor_id is None:
+        raise HTTPException(400, "team_supervisor requests require supervisor_id")
+    kw = dict(role=req.user_role, client_id=req.client_id, supervisor_id=req.supervisor_id, days=req.days)
     try:
-        summary = run_metric("total_hours_by_hotel", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        headcount = run_metric("headcount_active", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        absentee = run_metric("absentee_rate", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        inspections = run_metric("inspection_pass_rate", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        top_workers = run_metric("top_workers_by_hours", role=req.user_role, hotel_id=req.hotel_id, days=req.days, limit=5)
-        trend_hotel_id = req.hotel_id or summary["data"][0]["hotel_id"]
-        trend = run_metric("hours_trend_daily", role=req.user_role, hotel_id=trend_hotel_id, days=req.days)
+        summary = run_metric("total_hours_by_client", **kw)
+        headcount = run_metric("headcount_active", **kw)
+        absentee = run_metric("absentee_rate", **kw)
+        inspections = run_metric("inspection_pass_rate", **kw)
+        top_workers = run_metric("top_workers_by_hours", **kw, limit=5)
+        trend_client_id = req.client_id or summary["data"][0]["client_id"]
+        trend = run_metric("hours_trend_daily", role=req.user_role, client_id=trend_client_id,
+                            supervisor_id=req.supervisor_id, days=req.days)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
     return {
-        "total_hours_by_hotel": summary["data"],
+        "total_hours_by_client": summary["data"],
         "headcount": headcount["data"],
         "absentee": absentee,
         "inspections": inspections,
         "top_workers": top_workers["data"],
         "hours_trend": trend["data"],
-        "trend_hotel_id": trend_hotel_id,
+        "trend_client_id": trend_client_id,
     }
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    if req.user_role == "supervisor" and req.hotel_id is None:
-        raise HTTPException(400, "supervisor requests require hotel_id")
-    if not os.environ.get("GROQ_API_KEY"):
+    if req.user_role == "supervisor" and req.client_id is None:
+        raise HTTPException(400, "supervisor requests require client_id")
+    if req.user_role == "team_supervisor" and req.supervisor_id is None:
+        raise HTTPException(400, "team_supervisor requests require supervisor_id")
+    active_provider = os.environ.get("LLM_PROVIDER", "openai")
+    active_key = "GROQ_API_KEY" if active_provider == "groq" else "OPENAI_API_KEY"
+    if not os.environ.get(active_key):
         raise HTTPException(
             500,
-            "GROQ_API_KEY is not set on the server. Add it to backend/.env and restart the API.",
+            f"{active_key} is not set on the server (LLM_PROVIDER={active_provider}). "
+            f"Add it to backend/.env and restart the API.",
         )
     try:
         result = await answer_question(
             question=req.question,
             role=req.user_role,
-            hotel_id=req.hotel_id,
-            hotel_name=req.hotel_name,
+            client_id=req.client_id,
+            client_name=req.client_name,
+            supervisor_id=req.supervisor_id,
             history=[t.model_dump() for t in req.history],
         )
     except Exception as e:
         raise HTTPException(500, f"Agent error: {_root_cause(e)}")
+
+    chat_history.save_turn(
+        user_role=req.user_role, client_id=req.client_id, client_name=req.client_name,
+        supervisor_id=req.supervisor_id, question=req.question, answer=result["answer"],
+        chart=result.get("chart"), tools_used=result.get("tools_used"),
+    )
     return result
+
+
+@app.get("/api/chat/history")
+def get_chat_history(limit: int = 50, offset: int = 0):
+    return chat_history.list_history(limit=min(limit, 200), offset=offset)
 
 
 def _root_cause(e: BaseException) -> str:

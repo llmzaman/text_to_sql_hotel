@@ -17,10 +17,10 @@ from langchain_groq import ChatGroq
 
 
 @tool
-def run_metric_query(metric: str, role: str, hotel_id: int | None = None, days: int = 7) -> str:
-    """Run a business metric query. metric: e.g. 'total_hours_by_hotel'.
-    role: 'supervisor' or 'head_supervisor'. hotel_id: optional int."""
-    return f"[FAKE RESULT] metric={metric} role={role} hotel_id={hotel_id} days={days}: 1533 hours"
+def run_metric_query(metric: str, role: str, client_id: int | None = None, days: int = 7) -> str:
+    """Run a business metric query. metric: e.g. 'total_hours_by_client'.
+    role: 'supervisor' or 'head_supervisor'. client_id: optional int."""
+    return f"[FAKE RESULT] metric={metric} role={role} client_id={client_id} days={days}: 1533 hours"
 
 
 def main():
@@ -35,7 +35,7 @@ def main():
     llm_with_tools = llm.bind_tools([run_metric_query])
 
     resp = llm_with_tools.invoke([
-        HumanMessage(content="How many total hours were worked this week for hotel_id=1, role=supervisor?")
+        HumanMessage(content="How many total hours were worked this week for client_id=1, role=supervisor?")
     ])
 
     print("\n--- raw response ---")

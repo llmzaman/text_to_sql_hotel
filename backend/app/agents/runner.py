@@ -22,9 +22,10 @@ class ChatTurn(TypedDict):
 async def answer_question(
     question: str,
     role: str,
-    hotel_id: Optional[int],
-    hotel_name: Optional[str],
+    client_id: Optional[int],
+    client_name: Optional[str],
     history: List[ChatTurn],
+    supervisor_id: Optional[int] = None,
 ):
     messages = []
     for turn in history[-6:]:  # keep last few turns for context, bound token usage
@@ -35,7 +36,7 @@ async def answer_question(
     messages.append(HumanMessage(content=question))
 
     async with mcp_db_tools() as mcp_tools:
-        agent = build_agent(mcp_tools, role, hotel_id, hotel_name)
+        agent = build_agent(mcp_tools, role, client_id, client_name, supervisor_id)
         result = await agent.ainvoke({"messages": messages})
 
     out_messages = result["messages"]

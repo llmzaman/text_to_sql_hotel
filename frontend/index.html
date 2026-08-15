@@ -48,9 +48,18 @@
   .msg.assistant{align-self:flex-start;background:var(--card);border:1px solid var(--line);padding:13px 16px;border-radius:14px 14px 14px 3px;}
   .msg.assistant .tools{margin-top:8px;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px;}
   .msg.assistant .tools span{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:2px 6px;margin-right:5px;font-family:'IBM Plex Mono',monospace;}
-  .chart-wrap{align-self:flex-start;max-width:560px;background:var(--card);border:1px solid var(--line);
-    border-radius:14px;padding:16px;margin-top:-6px;}
+  .chart-wrap{align-self:flex-start;max-width:560px;width:100%;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:18px 20px;margin-top:-6px;}
   .chart-wrap canvas{max-height:260px;}
+  .chart-wrap .chart-title{font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:14px;}
+  .bar-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+  .bar-row:last-child{margin-bottom:0;}
+  .bar-label{flex:0 0 128px;font-size:12.5px;color:var(--ink-soft);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bar-track{flex:1;background:var(--paper);border-radius:6px;height:26px;position:relative;overflow:hidden;}
+  .bar-fill{height:100%;background:linear-gradient(90deg,var(--red),#c95951);border-radius:6px;
+    display:flex;align-items:center;justify-content:flex-end;min-width:36px;transition:width .5s ease;}
+  .bar-fill .bar-value{color:#fff;font-size:12px;font-weight:600;font-family:'IBM Plex Mono',monospace;padding-right:8px;}
+  .answered-in{align-self:flex-start;font-size:11px;color:var(--muted);margin-top:-10px;}
   .typing{align-self:flex-start;color:var(--muted);font-size:13px;font-style:italic;}
 
   #composer{border-top:1px solid var(--line);padding:16px 32px;background:var(--card);}
@@ -65,6 +74,11 @@
   .empty-state h2{color:var(--ink);font-size:19px;margin-bottom:8px;}
 
   .banner{background:#fbeee0;border:1px solid #ecd2ab;color:#7a4a10;font-size:12.5px;padding:10px 14px;border-radius:10px;margin:0 32px 14px;}
+
+  .clear-btn{background:transparent;color:#c9d0d8;border:1px solid #3a4552;border-radius:8px;
+    padding:6px 12px;font-size:12.5px;font-family:inherit;cursor:pointer;transition:.15s;}
+  .clear-btn:hover{background:#1e2732;color:#fff;border-color:#4a5666;}
+  .clear-btn:disabled{opacity:.4;cursor:default;}
 </style>
 </head>
 <body>
@@ -74,14 +88,20 @@
     <div class="role-switch">
       <label>Role
         <select id="roleSelect">
-          <option value="supervisor">Hotel supervisor</option>
           <option value="head_supervisor">Head of supervisors</option>
+          <option value="team_supervisor">Supervisor</option>
+          <option value="supervisor">Client supervisor</option>
         </select>
       </label>
-      <label id="hotelLabel">Hotel
-        <select id="hotelSelect"></select>
+      <label id="supervisorLabel">Supervisor
+        <select id="supervisorSelect"></select>
+      </label>
+      <label id="clientLabel">Client
+        <select id="clientSelect"></select>
       </label>
       <span class="role-tag" id="roleTag">Supervisor</span>
+      <button class="clear-btn" id="clearChatBtn" type="button">Clear chat</button>
+      <a class="clear-btn" href="/history.html" style="text-decoration:none;display:inline-block;">History</a>
     </div>
   </div>
 
@@ -93,11 +113,22 @@
     <div class="side-section">
       <div class="side-label">Ask about</div>
       <button class="suggested-q" data-q="How many total hours were worked in cleaning vs checking this week?">Total hours this week</button>
+      <button class="suggested-q" data-q="Show me the daily hours trend for the last 30 days.">Hours trend, last 30 days</button>
       <button class="suggested-q" data-q="Who are the top 5 workers by hours this week?">Top workers this week</button>
+      <button class="suggested-q" data-q="Who cleaned the most rooms this week?">Most rooms cleaned</button>
+      <button class="suggested-q" data-q="How many active workers do we have right now?">Active headcount</button>
       <button class="suggested-q" data-q="What is our absentee rate this week and who has been absent the most?">Absentee rate</button>
       <button class="suggested-q" data-q="What is our inspection pass rate and which checkers have done the most inspections?">Inspection pass rate</button>
+      <button class="suggested-q" data-q="Which cleaners have the highest inspection fail rate this month?">Worst fail rates</button>
+      <button class="suggested-q" data-q="Which workers have the most overtime hours this week?">Top overtime workers</button>
+      <button class="suggested-q" data-q="Compare all clients on total hours, headcount, absentee rate and inspection pass rate.">Compare clients</button>
+    </div>
+    <div class="side-section">
+      <div class="side-label">Ask about policy</div>
       <button class="suggested-q" data-q="What happens if a worker exceeds 10 hours of actual work in a single day, according to policy?">Max hours policy</button>
-      <button class="suggested-q" data-q="Compare all hotels on total hours, headcount, absentee rate and inspection pass rate.">Compare hotels</button>
+      <button class="suggested-q" data-q="How many consecutive days of leave can a supervisor approve without escalation?">Leave approval limits</button>
+      <button class="suggested-q" data-q="What's the required checklist for cleaning a guest room per the SOP?">Room cleaning SOP</button>
+      <button class="suggested-q" data-q="What are our SLA commitments to hotel clients?">Client SLA terms</button>
     </div>
   </aside>
 
@@ -120,59 +151,100 @@
 
 <script>
 const API = "";
-let HOTELS = [];
+let CLIENTS = [];
+let SUPERVISORS = [];
+let TEAM_CLIENTS = [];
 let history = [];
 
 const roleSelect = document.getElementById('roleSelect');
-const hotelSelect = document.getElementById('hotelSelect');
-const hotelLabel = document.getElementById('hotelLabel');
+const supervisorSelect = document.getElementById('supervisorSelect');
+const supervisorLabel = document.getElementById('supervisorLabel');
+const clientSelect = document.getElementById('clientSelect');
+const clientLabel = document.getElementById('clientLabel');
 const roleTag = document.getElementById('roleTag');
 const chatlog = document.getElementById('chatlog');
 const emptyState = document.getElementById('emptyState');
 const chatForm = document.getElementById('chatForm');
 const chatInput = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
+const clearChatBtn = document.getElementById('clearChatBtn');
 const dashCards = document.getElementById('dashCards');
+
+function activeClientList(){
+  return roleSelect.value === 'team_supervisor' ? TEAM_CLIENTS : CLIENTS;
+}
 
 function currentScope(){
   const role = roleSelect.value;
-  const hotel_id = role === 'supervisor' ? parseInt(hotelSelect.value) : (hotelSelect.value ? parseInt(hotelSelect.value) : null);
-  const hotel = HOTELS.find(h => h.hotel_id === hotel_id);
-  return { role, hotel_id, hotel_name: hotel ? hotel.name : null };
+  const client_id = clientSelect.value ? parseInt(clientSelect.value) : null;
+  const client = activeClientList().find(c => c.client_id === client_id);
+  const supervisor_id = role === 'team_supervisor' && supervisorSelect.value ? parseInt(supervisorSelect.value) : null;
+  return { role, client_id, client_name: client ? client.name : null, supervisor_id };
 }
 
-async function loadHotels(){
-  const res = await fetch(`${API}/api/hotels`);
-  HOTELS = await res.json();
-  renderHotelOptions();
+async function loadClients(){
+  const res = await fetch(`${API}/api/clients`);
+  CLIENTS = await res.json();
 }
 
-function renderHotelOptions(){
-  const role = roleSelect.value;
-  hotelSelect.innerHTML = '';
-  if (role === 'head_supervisor') {
-    const allOpt = document.createElement('option');
-    allOpt.value = ''; allOpt.textContent = 'All hotels';
-    hotelSelect.appendChild(allOpt);
-  }
-  HOTELS.forEach(h => {
+async function loadSupervisors(){
+  const res = await fetch(`${API}/api/supervisors`);
+  SUPERVISORS = await res.json();
+  supervisorSelect.innerHTML = '';
+  SUPERVISORS.forEach(s => {
     const opt = document.createElement('option');
-    opt.value = h.hotel_id; opt.textContent = `${h.name} (${h.city})`;
-    hotelSelect.appendChild(opt);
+    opt.value = s.supervisor_id; opt.textContent = s.name;
+    supervisorSelect.appendChild(opt);
   });
-  roleTag.textContent = role === 'supervisor' ? 'Supervisor' : 'Head of supervisors';
 }
 
-roleSelect.addEventListener('change', () => { renderHotelOptions(); loadDashboard(); });
-hotelSelect.addEventListener('change', loadDashboard);
+async function loadTeamClients(){
+  const sid = supervisorSelect.value;
+  TEAM_CLIENTS = sid ? await (await fetch(`${API}/api/supervisors/${sid}/clients`)).json() : [];
+}
+
+function renderClientOptions(){
+  const role = roleSelect.value;
+  clientSelect.innerHTML = '';
+  if (role === 'head_supervisor' || role === 'team_supervisor') {
+    const allOpt = document.createElement('option');
+    allOpt.value = ''; allOpt.textContent = role === 'team_supervisor' ? 'All my clients' : 'All clients';
+    clientSelect.appendChild(allOpt);
+  }
+  activeClientList().forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.client_id; opt.textContent = `${c.name} (${c.city})`;
+    clientSelect.appendChild(opt);
+  });
+  const roleLabels = {supervisor: 'Supervisor', team_supervisor: 'Supervisor', head_supervisor: 'Head of supervisors'};
+  roleTag.textContent = roleLabels[role];
+}
+
+async function onRoleChange(){
+  const role = roleSelect.value;
+  supervisorLabel.style.display = role === 'team_supervisor' ? '' : 'none';
+  if (role === 'team_supervisor') {
+    await loadTeamClients();
+  }
+  renderClientOptions();
+  loadDashboard();
+}
+
+roleSelect.addEventListener('change', onRoleChange);
+supervisorSelect.addEventListener('change', async () => { await loadTeamClients(); renderClientOptions(); loadDashboard(); });
+clientSelect.addEventListener('change', loadDashboard);
 
 async function loadDashboard(){
-  const {role, hotel_id} = currentScope();
+  const {role, client_id, supervisor_id} = currentScope();
+  if (role === 'team_supervisor' && !supervisor_id) {
+    dashCards.innerHTML = `<div class="metric-card warn"><div class="val">—</div><div class="lbl">No supervisors found</div></div>`;
+    return;
+  }
   dashCards.innerHTML = `<div class="metric-card"><div class="val">…</div><div class="lbl">Loading</div></div>`;
   try {
     const res = await fetch(`${API}/api/dashboard`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({user_role: role, hotel_id, days: 7})
+      body: JSON.stringify({user_role: role, client_id, supervisor_id, days: 7})
     });
     if(!res.ok) throw new Error(await res.text());
     const d = await res.json();
@@ -183,10 +255,10 @@ async function loadDashboard(){
 }
 
 function renderDashboard(d, role){
-  const totalHours = d.total_hours_by_hotel.reduce((s,r)=>s+r.total_hours,0).toFixed(0);
+  const totalHours = d.total_hours_by_client.reduce((s,r)=>s+r.total_hours,0).toFixed(0);
   const headcount = d.headcount.reduce((s,r)=>s+r.active_headcount,0);
-  const avgAbsentee = (d.absentee.by_hotel.reduce((s,r)=>s+r.absentee_rate_pct,0)/d.absentee.by_hotel.length).toFixed(1);
-  const avgPass = d.inspections.by_hotel.filter(r=>r.pass_rate_pct!=null);
+  const avgAbsentee = (d.absentee.by_client.reduce((s,r)=>s+r.absentee_rate_pct,0)/d.absentee.by_client.length).toFixed(1);
+  const avgPass = d.inspections.by_client.filter(r=>r.pass_rate_pct!=null);
   const passRate = avgPass.length ? (avgPass.reduce((s,r)=>s+r.pass_rate_pct,0)/avgPass.length).toFixed(1) : '—';
 
   dashCards.innerHTML = `
@@ -216,28 +288,67 @@ function addMessage(role, text, extra){
 function addChart(spec){
   const wrap = document.createElement('div');
   wrap.className = 'chart-wrap';
-  const canvas = document.createElement('canvas');
-  wrap.appendChild(canvas);
+
+  if (spec.chart_type === 'bar') {
+    renderBarRows(wrap, spec);
+  } else {
+    const title = document.createElement('div');
+    title.className = 'chart-title';
+    title.textContent = spec.title;
+    wrap.appendChild(title);
+    const canvas = document.createElement('canvas');
+    wrap.appendChild(canvas);
+    chatlog.appendChild(wrap);
+    chatlog.scrollTop = chatlog.scrollHeight;
+    new Chart(canvas, {
+      type: spec.chart_type,
+      data: {
+        labels: spec.labels,
+        datasets: [{
+          label: spec.series_label,
+          data: spec.values,
+          backgroundColor: ['#0e7c66','#c1791a','#2a343f','#6b8f7a','#b3403a','#7a9ea8','#c9a15a','#4c6b60'],
+          borderColor: '#0e7c66',
+          borderWidth: spec.chart_type === 'line' ? 2 : 1,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        plugins: { legend: { display: spec.chart_type === 'pie' } },
+        scales: { y: { beginAtZero: true } },
+        responsive: true,
+      }
+    });
+    return;
+  }
+
   chatlog.appendChild(wrap);
   chatlog.scrollTop = chatlog.scrollHeight;
-  new Chart(canvas, {
-    type: spec.chart_type,
-    data: {
-      labels: spec.labels,
-      datasets: [{
-        label: spec.series_label,
-        data: spec.values,
-        backgroundColor: ['#0e7c66','#c1791a','#2a343f','#6b8f7a','#b3403a','#7a9ea8','#c9a15a','#4c6b60'],
-        borderColor: '#0e7c66',
-        borderWidth: spec.chart_type === 'line' ? 2 : 1,
-        tension: 0.3,
-      }]
-    },
-    options: {
-      plugins: { title: { display: true, text: spec.title, font: {size: 13} }, legend: { display: spec.chart_type === 'pie' } },
-      scales: spec.chart_type === 'pie' ? {} : { y: { beginAtZero: true } },
-      responsive: true,
-    }
+}
+
+// Hand-drawn horizontal bar list (rounded track + gradient fill + inline
+// value label) instead of a Chart.js canvas — reads more like a report
+// card than a plotted chart for ranking-style answers.
+function renderBarRows(wrap, spec){
+  const title = document.createElement('div');
+  title.className = 'chart-title';
+  title.textContent = spec.title;
+  wrap.appendChild(title);
+
+  const max = Math.max(...spec.values, 1);
+  spec.labels.forEach((label, i) => {
+    const value = spec.values[i];
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar-label">${label}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${Math.max(6, (value / max) * 100)}%">
+          <span class="bar-value">${value}</span>
+        </div>
+      </div>
+    `;
+    wrap.appendChild(row);
   });
 }
 
@@ -252,6 +363,14 @@ document.querySelectorAll('.suggested-q').forEach(btn => {
   btn.addEventListener('click', () => ask(btn.dataset.q));
 });
 
+clearChatBtn.addEventListener('click', () => {
+  history = [];
+  Array.from(chatlog.children).forEach(child => {
+    if (child !== emptyState) child.remove();
+  });
+  emptyState.style.display = '';
+});
+
 async function ask(question){
   chatInput.value = '';
   sendBtn.disabled = true;
@@ -264,11 +383,12 @@ async function ask(question){
   chatlog.appendChild(typing);
   chatlog.scrollTop = chatlog.scrollHeight;
 
-  const {role, hotel_id, hotel_name} = currentScope();
+  const {role, client_id, client_name, supervisor_id} = currentScope();
+  const startedAt = performance.now();
   try {
     const res = await fetch(`${API}/api/chat`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({question, user_role: role, hotel_id, hotel_name, history})
+      body: JSON.stringify({question, user_role: role, client_id, client_name, supervisor_id, history})
     });
     typing.remove();
     if(!res.ok){
@@ -280,6 +400,11 @@ async function ask(question){
     addMessage('assistant', data.answer, data);
     history.push({role:'assistant', content: data.answer});
     if (data.chart) addChart(data.chart);
+    const elapsed = document.createElement('div');
+    elapsed.className = 'answered-in';
+    elapsed.textContent = `Answered in ${((performance.now() - startedAt) / 1000).toFixed(1)}s`;
+    chatlog.appendChild(elapsed);
+    chatlog.scrollTop = chatlog.scrollHeight;
   } catch(e){
     typing.remove();
     addMessage('assistant', '⚠ Could not reach the backend. Is the FastAPI server running?');
@@ -289,7 +414,9 @@ async function ask(question){
 }
 
 (async function init(){
-  await loadHotels();
+  supervisorLabel.style.display = roleSelect.value === 'team_supervisor' ? '' : 'none';
+  await Promise.all([loadClients(), loadSupervisors()]);
+  renderClientOptions();
   await loadDashboard();
 })();
 </script>

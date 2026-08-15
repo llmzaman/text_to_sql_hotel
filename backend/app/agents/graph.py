@@ -6,42 +6,72 @@ decides which tool to call, a tool-execution node, looped until the
 model stops requesting tools — then the final LLM message is the answer.
 
 We call llm.bind_tools(...) directly here, which is the exact call the
-diagnostic confirmed works with ChatGroq, so tools reliably reach the
-model as real function definitions.
+diagnostic confirmed works reliably, so tools reliably reach the model
+as real function definitions.
+
+Both OpenAI and Groq are wired up; LLM_PROVIDER picks which one runs
+(defaults to "openai"). Groq's free/on-demand tier caps out at a low
+shared tokens-per-minute budget (6-12k TPM across the account) and its
+smaller/free-tier models were unreliable at real tool-calling (silently
+echoing the call as text instead of invoking it) — OpenAI has much higher
+default rate limits and solid tool-calling, hence the default.
 """
 import os
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
 from app.agents.tools import LOCAL_TOOLS
 
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
+
+def _build_llm():
+    if LLM_PROVIDER == "groq":
+        return ChatGroq(model=GROQ_MODEL, temperature=0.2, max_retries=4)
+    return ChatOpenAI(model=OPENAI_MODEL, temperature=0.2, max_retries=4)
 
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
 
 
-def _system_prompt(role: str, hotel_id, hotel_name) -> str:
+def _system_prompt(role: str, client_id, client_name, supervisor_id=None) -> str:
     if role == "supervisor":
         scope = (
-            f"You are assisting a HOTEL SUPERVISOR at '{hotel_name}' (hotel_id={hotel_id}). "
-            f"They can only see data for their own hotel. Always pass hotel_id={hotel_id} and "
-            f"role='supervisor' to run_metric_query. Never answer questions about other hotels — "
+            f"You are assisting a CLIENT SUPERVISOR at '{client_name}' (client_id={client_id}). "
+            f"They can only see data for their own client. Always pass client_id={client_id} and "
+            f"role='supervisor' to run_metric_query. Never answer questions about other clients — "
             f"politely explain that's outside their access if asked."
+        )
+    elif role == "team_supervisor":
+        scope = (
+            f"You are assisting a SUPERVISOR (supervisor_id={supervisor_id}) who oversees a specific "
+            f"set of clients assigned to them via the supervisor_client table — NOT all clients. "
+            f"Always pass role='team_supervisor' and supervisor_id={supervisor_id} to run_metric_query. "
+            + (
+                f"They've currently selected client '{client_name}' (client_id={client_id}) — pass that "
+                f"client_id too unless they ask about all their clients together."
+                if client_id is not None
+                else "No single client is selected — omit client_id to aggregate across all clients "
+                     "assigned to this supervisor."
+            )
+            + " Never answer questions about clients outside this supervisor's assignments."
         )
     else:
         scope = (
-            "You are assisting the HEAD OF SUPERVISORS, who oversees all hotels in the agency. "
-            "Always pass role='head_supervisor' to run_metric_query. Omit hotel_id to aggregate "
-            "across all hotels, or pass a specific hotel_id when the question is about one hotel."
+            "You are assisting the HEAD OF SUPERVISORS, who oversees all clients in the agency. "
+            "Always pass role='head_supervisor' to run_metric_query. Omit client_id to aggregate "
+            "across all clients, or pass a specific client_id when the question is about one client."
         )
 
-    return f"""You are a business intelligence assistant for a hotel cleaning workforce
+    return f"""You are a business intelligence assistant for a cleaning workforce
 management platform. {scope}
 
 You have three kinds of tools:
@@ -51,24 +81,35 @@ You have three kinds of tools:
    Never invent numbers — always call the tool.
 2. search_policy_documents — for questions about rules, policy, SOPs, compliance
    thresholds, or contract terms (not for current numbers).
-3. emit_chart — call whenever a ranking, comparison, or trend over time would be clearer
-   as a chart. 'bar' for rankings/comparisons, 'line' for trends, 'pie' for part-of-whole.
+3. emit_chart — MUST be called (not substituted with a markdown table or bullet list)
+   whenever the answer has 3+ comparable numbers: a ranking, a comparison across
+   clients/workers, or a trend over time. 'bar' for rankings/comparisons, 'line' for
+   trends, 'pie' for part-of-whole. If comparing several different metrics at once
+   (hours AND headcount AND absentee rate, say), call emit_chart once per metric —
+   don't try to cram unrelated metrics into one chart, and don't skip charting just
+   because there are multiple metrics to show.
 
-Answer concisely, like a sharp operations analyst. Lead with the number/insight. When a
-question needs both a policy check and current numbers, use both tool types before answering.
+Answer concisely, like a sharp operations analyst. Lead with the number/insight. Keep
+prose plain — no markdown headers, bold, or bullet lists; the chat UI renders plain text
+only, so use short sentences instead of formatted tables. When a question needs both a
+policy check and current numbers, use both tool types before answering.
 
 You MUST use the real tool-calling mechanism to call tools. NEVER write a tool name or its
 JSON arguments as text in your reply — that does not run anything and the user sees no data.
-After the tools return, write a natural-language answer using their results."""
+After the tools return, write a natural-language answer using their results.
+
+If a tool returns an "error" field, quote that exact error message to the user instead of
+guessing or inventing a plausible-sounding cause — an invented explanation is actively
+misleading. If retrying with corrected arguments won't help, just report the error verbatim."""
 
 
-def build_agent(mcp_tools, role: str, hotel_id, hotel_name):
+def build_agent(mcp_tools, role: str, client_id, client_name, supervisor_id=None):
     all_tools = list(mcp_tools) + LOCAL_TOOLS
     tools_by_name = {t.name: t for t in all_tools}
 
-    llm = ChatGroq(model=GROQ_MODEL, temperature=0.2)
+    llm = _build_llm()
     llm_with_tools = llm.bind_tools(all_tools)
-    system = SystemMessage(content=_system_prompt(role, hotel_id, hotel_name))
+    system = SystemMessage(content=_system_prompt(role, client_id, client_name, supervisor_id))
 
     async def call_model(state: AgentState):
         resp = await llm_with_tools.ainvoke([system] + state["messages"])

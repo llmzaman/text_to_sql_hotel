@@ -1,6 +1,7 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
+psycopg2-binary>=2.9
 faker>=25.0
 pypdf>=4.0
 reportlab>=4.0
@@ -12,9 +13,14 @@ python-dotenv>=1.0
 # LLM / agent stack
 langchain>=0.3
 langchain-core>=0.3
+langchain-openai>=0.2
 langchain-groq>=0.2
 langgraph>=0.2
 
 # MCP
-mcp>=1.0
+# Pinned exactly: mcp 2.0 renamed FastMCP to MCPServer and broke
+# langchain-mcp-adapters compatibility (see db_mcp_server.py). An
+# unconstrained >= here lets pip silently resolve to a breaking version
+# on any rebuild that invalidates the layer cache.
+mcp==1.29.0
 langchain-mcp-adapters>=0.1

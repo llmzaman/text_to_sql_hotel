@@ -47,10 +47,17 @@ class ChartSpec(BaseModel):
 @tool
 def emit_chart(chart_type: str, title: str, labels: List[str], values: List[float], series_label: str = "Value") -> str:
     """Request a chart be shown to the user in the UI, on top of your text
-    answer. Use this whenever a comparison, ranking, or trend over time
-    would be clearer as a chart than as text (e.g. 'compare hotels', 'top
-    workers by hours', 'hours trend this week'). chart_type must be one of
-    'bar', 'line', or 'pie'. labels and values must be the same length."""
+    answer. You MUST call this — not just format a markdown table or bullet
+    list — whenever the answer involves 3+ comparable numbers: a ranking
+    ('top N workers/clients'), a comparison across clients/workers, or a
+    trend over time ('hours trend', 'this week vs last week'). If a
+    question compares multiple different metrics at once (e.g. hours AND
+    headcount AND absentee rate across clients), call this once per metric
+    — one chart per distinct unit/series, not one chart trying to cram
+    unrelated metrics together. chart_type must be one of 'bar' (rankings/
+    comparisons), 'line' (trends over time), or 'pie' (part-of-whole).
+    labels and values must be the same length. Skip this only for a single
+    number with no ranking/comparison (e.g. 'what's our absentee rate')."""
     spec = ChartSpec(chart_type=chart_type, title=title, labels=labels, values=values, series_label=series_label)
     return json.dumps({"status": "chart_queued", "spec": spec.model_dump()})
 
