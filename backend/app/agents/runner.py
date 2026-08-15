@@ -22,8 +22,8 @@ class ChatTurn(TypedDict):
 async def answer_question(
     question: str,
     role: str,
-    hotel_id: Optional[int],
-    hotel_name: Optional[str],
+    client_id: Optional[int],
+    client_name: Optional[str],
     history: List[ChatTurn],
 ):
     messages = []
