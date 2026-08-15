@@ -357,6 +357,7 @@ async function ask(question){
   chatlog.scrollTop = chatlog.scrollHeight;
 
   const {role, client_id, client_name, supervisor_id} = currentScope();
+  const startedAt = performance.now();
   try {
     const res = await fetch(`${API}/api/chat`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -372,6 +373,11 @@ async function ask(question){
     addMessage('assistant', data.answer, data);
     history.push({role:'assistant', content: data.answer});
     if (data.chart) addChart(data.chart);
+    const elapsed = document.createElement('div');
+    elapsed.className = 'answered-in';
+    elapsed.textContent = `Answered in ${((performance.now() - startedAt) / 1000).toFixed(1)}s`;
+    chatlog.appendChild(elapsed);
+    chatlog.scrollTop = chatlog.scrollHeight;
   } catch(e){
     typing.remove();
     addMessage('assistant', '⚠ Could not reach the backend. Is the FastAPI server running?');
