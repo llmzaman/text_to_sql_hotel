@@ -13,7 +13,7 @@ from app.metrics import run_metric, METRIC_GLOSSARY
 from app.schemas import ChatRequest, ChatResponse, DashboardRequest, ClientOut
 from app.agents.runner import answer_question
 
-app = FastAPI(title="Hotel Workforce Agentic RAG API")
+app = FastAPI(title="Client Workforce Agentic RAG API")
 
 app.add_middleware(
     CORSMiddleware,
