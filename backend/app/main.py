@@ -149,7 +149,18 @@ async def chat(req: ChatRequest):
         )
     except Exception as e:
         raise HTTPException(500, f"Agent error: {_root_cause(e)}")
+
+    chat_history.save_turn(
+        user_role=req.user_role, client_id=req.client_id, client_name=req.client_name,
+        supervisor_id=req.supervisor_id, question=req.question, answer=result["answer"],
+        chart=result.get("chart"), tools_used=result.get("tools_used"),
+    )
     return result
+
+
+@app.get("/api/chat/history")
+def get_chat_history(limit: int = 50, offset: int = 0):
+    return chat_history.list_history(limit=min(limit, 200), offset=offset)
 
 
 def _root_cause(e: BaseException) -> str:
