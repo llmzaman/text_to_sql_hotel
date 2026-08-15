@@ -148,6 +148,18 @@ up automatically), then set `GROQ_API_KEY` in the service's variables.
 Railway injects `PORT` — the container's `CMD` binds to it. `/api/health`
 is wired as the healthcheck path.
 
+Add a Railway Postgres plugin and it auto-injects `DATABASE_URL` into the
+service — `database.py` picks it up and switches off SQLite automatically
+(falls back to the local SQLite file only when `DATABASE_URL` is unset).
+Seed the fresh database once after the plugin is attached:
+
+```bash
+railway run python -m app.seed_data
+```
+
+API docs (Swagger UI) are served at `/docs`, ReDoc at `/redoc`, raw
+OpenAPI schema at `/openapi.json` — enabled by default, no extra setup.
+
 ## Extending this
 
 - Add a new metric: write a `_m_your_metric` function in `metrics.py`,
