@@ -132,6 +132,22 @@ Switch the role selector between "Hotel supervisor" (pick a hotel) and
   through the agent. This is a common pattern: reserve the LLM for
   open-ended questions, keep fixed dashboards on the fast path.
 
+## Deploy (Docker / Railway)
+
+Single container: FastAPI serves the API and the static frontend on one
+port (`app/main.py` mounts `frontend/` at `/`). The MCP metrics server
+runs as a stdio subprocess inside the same container — no second service.
+
+```bash
+docker build -t hotel-rag .
+docker run -p 8000:8000 -e GROQ_API_KEY=your_key hotel-rag
+```
+
+Railway: connect the repo (root `Dockerfile` + `railway.toml` are picked
+up automatically), then set `GROQ_API_KEY` in the service's variables.
+Railway injects `PORT` — the container's `CMD` binds to it. `/api/health`
+is wired as the healthcheck path.
+
 ## Extending this
 
 - Add a new metric: write a `_m_your_metric` function in `metrics.py`,
