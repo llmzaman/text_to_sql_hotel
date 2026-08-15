@@ -129,10 +129,10 @@ async def chat(req: ChatRequest):
         raise HTTPException(400, "supervisor requests require client_id")
     if req.user_role == "team_supervisor" and req.supervisor_id is None:
         raise HTTPException(400, "team_supervisor requests require supervisor_id")
-    if not os.environ.get("GROQ_API_KEY"):
+    if not os.environ.get("OPENAI_API_KEY"):
         raise HTTPException(
             500,
-            "GROQ_API_KEY is not set on the server. Add it to backend/.env and restart the API.",
+            "OPENAI_API_KEY is not set on the server. Add it to backend/.env and restart the API.",
         )
     try:
         result = await answer_question(
