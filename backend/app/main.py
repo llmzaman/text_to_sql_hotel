@@ -8,9 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import SessionLocal
-from app.models import Hotel
+from app.models import Client
 from app.metrics import run_metric, METRIC_GLOSSARY
-from app.schemas import ChatRequest, ChatResponse, DashboardRequest, HotelOut
+from app.schemas import ChatRequest, ChatResponse, DashboardRequest, ClientOut
 from app.agents.runner import answer_question
 
 app = FastAPI(title="Hotel Workforce Agentic RAG API")
