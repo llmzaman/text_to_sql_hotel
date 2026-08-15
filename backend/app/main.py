@@ -129,10 +129,13 @@ async def chat(req: ChatRequest):
         raise HTTPException(400, "supervisor requests require client_id")
     if req.user_role == "team_supervisor" and req.supervisor_id is None:
         raise HTTPException(400, "team_supervisor requests require supervisor_id")
-    if not os.environ.get("OPENAI_API_KEY"):
+    active_provider = os.environ.get("LLM_PROVIDER", "openai")
+    active_key = "GROQ_API_KEY" if active_provider == "groq" else "OPENAI_API_KEY"
+    if not os.environ.get(active_key):
         raise HTTPException(
             500,
-            "OPENAI_API_KEY is not set on the server. Add it to backend/.env and restart the API.",
+            f"{active_key} is not set on the server (LLM_PROVIDER={active_provider}). "
+            f"Add it to backend/.env and restart the API.",
         )
     try:
         result = await answer_question(
