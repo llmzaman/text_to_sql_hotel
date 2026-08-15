@@ -6,20 +6,26 @@ decides which tool to call, a tool-execution node, looped until the
 model stops requesting tools — then the final LLM message is the answer.
 
 We call llm.bind_tools(...) directly here, which is the exact call the
-diagnostic confirmed works with ChatGroq, so tools reliably reach the
-model as real function definitions.
+diagnostic confirmed works reliably, so tools reliably reach the model
+as real function definitions.
+
+Runs on OpenAI (not Groq) — Groq's free/on-demand tier caps out at a low
+shared tokens-per-minute budget (6-12k TPM across the account) and its
+smaller/free-tier models were unreliable at real tool-calling (silently
+echoing the call as text instead of invoking it). OpenAI has much higher
+default rate limits and solid tool-calling.
 """
 import os
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import SystemMessage, ToolMessage
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
 from app.agents.tools import LOCAL_TOOLS
 
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 
 class AgentState(TypedDict):
