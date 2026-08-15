@@ -12,6 +12,7 @@ from app.database import SessionLocal
 from app.metrics import run_metric, supervisor_client_ids, METRIC_GLOSSARY
 from app.schemas import ChatRequest, ChatResponse, DashboardRequest, ClientOut, SupervisorOut
 from app.agents.runner import answer_question
+from app import chat_history
 
 app = FastAPI(title="Client Workforce Agentic RAG API")
 
