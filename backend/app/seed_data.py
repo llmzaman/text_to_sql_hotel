@@ -5,7 +5,9 @@ shifts, cleaning/checking tasks, and inspections.
 
 Run: python -m app.seed_data
 """
+import os
 import random
+import sys
 from datetime import date, datetime, timedelta
 
 from faker import Faker
@@ -15,6 +17,16 @@ from app.database import engine, SessionLocal
 from app.models import (
     Base, Agency, Hotel, User, Room, Shift, Task, Inspection, Leave
 )
+
+if os.environ.get("DATABASE_URL"):
+    sys.exit(
+        "Refusing to run: DATABASE_URL is set, which means this would run "
+        "against a real Postgres database instead of the local demo SQLite "
+        "file. This script's models.Base.metadata.drop_all() would DROP "
+        "tables that may collide by name with a real production schema "
+        "(e.g. 'users', 'rooms'). Unset DATABASE_URL to seed the local "
+        "SQLite demo DB instead."
+    )
 
 fake = Faker()
 random.seed(42)
