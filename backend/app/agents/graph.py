@@ -86,11 +86,7 @@ def build_agent(mcp_tools, role: str, client_id, client_name, supervisor_id=None
     all_tools = list(mcp_tools) + LOCAL_TOOLS
     tools_by_name = {t.name: t for t in all_tools}
 
-    # This Groq account's on-demand tier caps at a low tokens-per-minute
-    # budget shared across all requests, so bursts of traffic 429. Let the
-    # underlying client retry with backoff instead of failing the request —
-    # the account's rate-limit window is short (~10-20s).
-    llm = ChatGroq(model=GROQ_MODEL, temperature=0.2, max_retries=4)
+    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0.2, max_retries=4)
     llm_with_tools = llm.bind_tools(all_tools)
     system = SystemMessage(content=_system_prompt(role, client_id, client_name, supervisor_id))
 
