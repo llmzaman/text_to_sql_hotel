@@ -6,9 +6,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.database import SessionLocal
-from app.models import Client
 from app.metrics import run_metric, METRIC_GLOSSARY
 from app.schemas import ChatRequest, ChatResponse, DashboardRequest, ClientOut
 from app.agents.runner import answer_question
