@@ -97,14 +97,18 @@ def dashboard(req: DashboardRequest):
     so the dashboard loads instantly without an LLM round trip."""
     if req.user_role == "supervisor" and req.client_id is None:
         raise HTTPException(400, "supervisor requests require client_id")
+    if req.user_role == "team_supervisor" and req.supervisor_id is None:
+        raise HTTPException(400, "team_supervisor requests require supervisor_id")
+    kw = dict(role=req.user_role, client_id=req.client_id, supervisor_id=req.supervisor_id, days=req.days)
     try:
-        summary = run_metric("total_hours_by_client", role=req.user_role, client_id=req.client_id, days=req.days)
-        headcount = run_metric("headcount_active", role=req.user_role, client_id=req.client_id, days=req.days)
-        absentee = run_metric("absentee_rate", role=req.user_role, client_id=req.client_id, days=req.days)
-        inspections = run_metric("inspection_pass_rate", role=req.user_role, client_id=req.client_id, days=req.days)
-        top_workers = run_metric("top_workers_by_hours", role=req.user_role, client_id=req.client_id, days=req.days, limit=5)
+        summary = run_metric("total_hours_by_client", **kw)
+        headcount = run_metric("headcount_active", **kw)
+        absentee = run_metric("absentee_rate", **kw)
+        inspections = run_metric("inspection_pass_rate", **kw)
+        top_workers = run_metric("top_workers_by_hours", **kw, limit=5)
         trend_client_id = req.client_id or summary["data"][0]["client_id"]
-        trend = run_metric("hours_trend_daily", role=req.user_role, client_id=trend_client_id, days=req.days)
+        trend = run_metric("hours_trend_daily", role=req.user_role, client_id=trend_client_id,
+                            supervisor_id=req.supervisor_id, days=req.days)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
