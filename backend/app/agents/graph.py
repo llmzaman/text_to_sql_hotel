@@ -62,13 +62,13 @@ JSON arguments as text in your reply — that does not run anything and the user
 After the tools return, write a natural-language answer using their results."""
 
 
-def build_agent(mcp_tools, role: str, hotel_id, hotel_name):
+def build_agent(mcp_tools, role: str, client_id, client_name):
     all_tools = list(mcp_tools) + LOCAL_TOOLS
     tools_by_name = {t.name: t for t in all_tools}
 
     llm = ChatGroq(model=GROQ_MODEL, temperature=0.2)
     llm_with_tools = llm.bind_tools(all_tools)
-    system = SystemMessage(content=_system_prompt(role, hotel_id, hotel_name))
+    system = SystemMessage(content=_system_prompt(role, client_id, client_name))
 
     async def call_model(state: AgentState):
         resp = await llm_with_tools.ainvoke([system] + state["messages"])
