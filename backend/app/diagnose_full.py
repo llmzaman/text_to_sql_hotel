@@ -20,7 +20,7 @@ async def main():
         for t in mcp_tools:
             print(f"  - {t.name} args_schema:", getattr(t, "args", "NONE"))
 
-        agent = build_agent(mcp_tools, role="supervisor", hotel_id=1, hotel_name="Grand Meridian Hotel")
+        agent = build_agent(mcp_tools, role="supervisor", client_id=1, client_name="Grand Meridian Hotel")
         result = await agent.ainvoke({
             "messages": [HumanMessage(content="How many total hours were worked this week?")]
         })
