@@ -20,3 +20,6 @@ backend/.env
 
 # Logs
 *.log
+
+# Runtime chat history (regenerated in the container, not seed data)
+backend/data/chat_history.db
