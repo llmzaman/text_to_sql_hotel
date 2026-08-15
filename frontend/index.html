@@ -269,28 +269,67 @@ function addMessage(role, text, extra){
 function addChart(spec){
   const wrap = document.createElement('div');
   wrap.className = 'chart-wrap';
-  const canvas = document.createElement('canvas');
-  wrap.appendChild(canvas);
+
+  if (spec.chart_type === 'bar') {
+    renderBarRows(wrap, spec);
+  } else {
+    const title = document.createElement('div');
+    title.className = 'chart-title';
+    title.textContent = spec.title;
+    wrap.appendChild(title);
+    const canvas = document.createElement('canvas');
+    wrap.appendChild(canvas);
+    chatlog.appendChild(wrap);
+    chatlog.scrollTop = chatlog.scrollHeight;
+    new Chart(canvas, {
+      type: spec.chart_type,
+      data: {
+        labels: spec.labels,
+        datasets: [{
+          label: spec.series_label,
+          data: spec.values,
+          backgroundColor: ['#0e7c66','#c1791a','#2a343f','#6b8f7a','#b3403a','#7a9ea8','#c9a15a','#4c6b60'],
+          borderColor: '#0e7c66',
+          borderWidth: spec.chart_type === 'line' ? 2 : 1,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        plugins: { legend: { display: spec.chart_type === 'pie' } },
+        scales: { y: { beginAtZero: true } },
+        responsive: true,
+      }
+    });
+    return;
+  }
+
   chatlog.appendChild(wrap);
   chatlog.scrollTop = chatlog.scrollHeight;
-  new Chart(canvas, {
-    type: spec.chart_type,
-    data: {
-      labels: spec.labels,
-      datasets: [{
-        label: spec.series_label,
-        data: spec.values,
-        backgroundColor: ['#0e7c66','#c1791a','#2a343f','#6b8f7a','#b3403a','#7a9ea8','#c9a15a','#4c6b60'],
-        borderColor: '#0e7c66',
-        borderWidth: spec.chart_type === 'line' ? 2 : 1,
-        tension: 0.3,
-      }]
-    },
-    options: {
-      plugins: { title: { display: true, text: spec.title, font: {size: 13} }, legend: { display: spec.chart_type === 'pie' } },
-      scales: spec.chart_type === 'pie' ? {} : { y: { beginAtZero: true } },
-      responsive: true,
-    }
+}
+
+// Hand-drawn horizontal bar list (rounded track + gradient fill + inline
+// value label) instead of a Chart.js canvas — reads more like a report
+// card than a plotted chart for ranking-style answers.
+function renderBarRows(wrap, spec){
+  const title = document.createElement('div');
+  title.className = 'chart-title';
+  title.textContent = spec.title;
+  wrap.appendChild(title);
+
+  const max = Math.max(...spec.values, 1);
+  spec.labels.forEach((label, i) => {
+    const value = spec.values[i];
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar-label">${label}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${Math.max(6, (value / max) * 100)}%">
+          <span class="bar-value">${value}</span>
+        </div>
+      </div>
+    `;
+    wrap.appendChild(row);
   });
 }
 
