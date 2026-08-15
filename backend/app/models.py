@@ -1,6 +1,6 @@
 """
 SQLAlchemy ORM models implementing the conceptual schema:
-agencies -> hotels -> users -> shifts / tasks / inspections / leaves / rooms
+agencies -> clients -> users -> shifts / tasks / inspections / leaves / rooms
 """
 from datetime import datetime
 from sqlalchemy import (
