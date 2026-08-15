@@ -32,10 +32,16 @@ def health():
 def list_clients():
     db = SessionLocal()
     try:
-        clients = db.query(Client).all()
+        rows = db.execute(text("""
+            SELECT c.id, c."clientName", c."clientCity", COUNT(r.id) AS room_count
+            FROM client c LEFT JOIN rooms r ON r."clientId" = c.id
+            WHERE c."deletedAt" IS NULL
+            GROUP BY c.id, c."clientName", c."clientCity"
+            ORDER BY c.id
+        """)).all()
         return [
-            ClientOut(client_id=c.client_id, name=c.name, city=c.city, room_count=c.room_count)
-            for c in clients
+            ClientOut(client_id=cid, name=name, city=city, room_count=room_count)
+            for cid, name, city, room_count in rows
         ]
     finally:
         db.close()
