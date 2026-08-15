@@ -43,6 +43,7 @@ class ChatResponse(BaseModel):
 
 
 class DashboardRequest(BaseModel):
-    user_role: Literal["supervisor", "head_supervisor"]
+    user_role: Literal["supervisor", "team_supervisor", "head_supervisor"]
     client_id: Optional[int] = None
+    supervisor_id: Optional[int] = None
     days: int = 7
