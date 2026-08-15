@@ -2,8 +2,8 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 
-class HotelOut(BaseModel):
-    hotel_id: int
+class ClientOut(BaseModel):
+    client_id: int
     name: str
     city: Optional[str] = None
     room_count: Optional[int] = None
