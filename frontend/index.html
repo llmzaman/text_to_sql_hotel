@@ -264,11 +264,11 @@ async function ask(question){
   chatlog.appendChild(typing);
   chatlog.scrollTop = chatlog.scrollHeight;
 
-  const {role, hotel_id, hotel_name} = currentScope();
+  const {role, client_id, client_name} = currentScope();
   try {
     const res = await fetch(`${API}/api/chat`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({question, user_role: role, hotel_id, hotel_name, history})
+      body: JSON.stringify({question, user_role: role, client_id, client_name, history})
     });
     typing.remove();
     if(!res.ok){
