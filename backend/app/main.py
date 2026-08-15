@@ -51,27 +51,27 @@ def dashboard(req: DashboardRequest):
     """Fast, non-agentic path for the dashboard summary cards — calls the
     same semantic-layer metric functions the chat agent uses, but directly,
     so the dashboard loads instantly without an LLM round trip."""
-    if req.user_role == "supervisor" and req.hotel_id is None:
-        raise HTTPException(400, "supervisor requests require hotel_id")
+    if req.user_role == "supervisor" and req.client_id is None:
+        raise HTTPException(400, "supervisor requests require client_id")
     try:
-        summary = run_metric("total_hours_by_hotel", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        headcount = run_metric("headcount_active", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        absentee = run_metric("absentee_rate", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        inspections = run_metric("inspection_pass_rate", role=req.user_role, hotel_id=req.hotel_id, days=req.days)
-        top_workers = run_metric("top_workers_by_hours", role=req.user_role, hotel_id=req.hotel_id, days=req.days, limit=5)
-        trend_hotel_id = req.hotel_id or summary["data"][0]["hotel_id"]
-        trend = run_metric("hours_trend_daily", role=req.user_role, hotel_id=trend_hotel_id, days=req.days)
+        summary = run_metric("total_hours_by_client", role=req.user_role, client_id=req.client_id, days=req.days)
+        headcount = run_metric("headcount_active", role=req.user_role, client_id=req.client_id, days=req.days)
+        absentee = run_metric("absentee_rate", role=req.user_role, client_id=req.client_id, days=req.days)
+        inspections = run_metric("inspection_pass_rate", role=req.user_role, client_id=req.client_id, days=req.days)
+        top_workers = run_metric("top_workers_by_hours", role=req.user_role, client_id=req.client_id, days=req.days, limit=5)
+        trend_client_id = req.client_id or summary["data"][0]["client_id"]
+        trend = run_metric("hours_trend_daily", role=req.user_role, client_id=trend_client_id, days=req.days)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
     return {
-        "total_hours_by_hotel": summary["data"],
+        "total_hours_by_client": summary["data"],
         "headcount": headcount["data"],
         "absentee": absentee,
         "inspections": inspections,
         "top_workers": top_workers["data"],
         "hours_trend": trend["data"],
-        "trend_hotel_id": trend_hotel_id,
+        "trend_client_id": trend_client_id,
     }
 
 
