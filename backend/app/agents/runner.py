@@ -25,6 +25,7 @@ async def answer_question(
     client_id: Optional[int],
     client_name: Optional[str],
     history: List[ChatTurn],
+    supervisor_id: Optional[int] = None,
 ):
     messages = []
     for turn in history[-6:]:  # keep last few turns for context, bound token usage
