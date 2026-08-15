@@ -108,7 +108,7 @@ class Leave(Base):
     __tablename__ = "leaves"
     leave_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id"))
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     date_from = Column(Date)
     date_to = Column(Date)
     reason = Column(String)
