@@ -35,7 +35,7 @@ def main():
     llm_with_tools = llm.bind_tools([run_metric_query])
 
     resp = llm_with_tools.invoke([
-        HumanMessage(content="How many total hours were worked this week for hotel_id=1, role=supervisor?")
+        HumanMessage(content="How many total hours were worked this week for client_id=1, role=supervisor?")
     ])
 
     print("\n--- raw response ---")
