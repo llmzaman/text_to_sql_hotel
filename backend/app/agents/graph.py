@@ -26,13 +26,27 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
 
 
-def _system_prompt(role: str, client_id, client_name) -> str:
+def _system_prompt(role: str, client_id, client_name, supervisor_id=None) -> str:
     if role == "supervisor":
         scope = (
             f"You are assisting a CLIENT SUPERVISOR at '{client_name}' (client_id={client_id}). "
             f"They can only see data for their own client. Always pass client_id={client_id} and "
             f"role='supervisor' to run_metric_query. Never answer questions about other clients — "
             f"politely explain that's outside their access if asked."
+        )
+    elif role == "team_supervisor":
+        scope = (
+            f"You are assisting a SUPERVISOR (supervisor_id={supervisor_id}) who oversees a specific "
+            f"set of clients assigned to them via the supervisor_client table — NOT all clients. "
+            f"Always pass role='team_supervisor' and supervisor_id={supervisor_id} to run_metric_query. "
+            + (
+                f"They've currently selected client '{client_name}' (client_id={client_id}) — pass that "
+                f"client_id too unless they ask about all their clients together."
+                if client_id is not None
+                else "No single client is selected — omit client_id to aggregate across all clients "
+                     "assigned to this supervisor."
+            )
+            + " Never answer questions about clients outside this supervisor's assignments."
         )
     else:
         scope = (
