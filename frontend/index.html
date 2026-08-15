@@ -136,43 +136,43 @@ const dashCards = document.getElementById('dashCards');
 
 function currentScope(){
   const role = roleSelect.value;
-  const hotel_id = role === 'supervisor' ? parseInt(hotelSelect.value) : (hotelSelect.value ? parseInt(hotelSelect.value) : null);
-  const hotel = HOTELS.find(h => h.hotel_id === hotel_id);
-  return { role, hotel_id, hotel_name: hotel ? hotel.name : null };
+  const client_id = role === 'supervisor' ? parseInt(clientSelect.value) : (clientSelect.value ? parseInt(clientSelect.value) : null);
+  const client = CLIENTS.find(c => c.client_id === client_id);
+  return { role, client_id, client_name: client ? client.name : null };
 }
 
-async function loadHotels(){
-  const res = await fetch(`${API}/api/hotels`);
-  HOTELS = await res.json();
-  renderHotelOptions();
+async function loadClients(){
+  const res = await fetch(`${API}/api/clients`);
+  CLIENTS = await res.json();
+  renderClientOptions();
 }
 
-function renderHotelOptions(){
+function renderClientOptions(){
   const role = roleSelect.value;
-  hotelSelect.innerHTML = '';
+  clientSelect.innerHTML = '';
   if (role === 'head_supervisor') {
     const allOpt = document.createElement('option');
-    allOpt.value = ''; allOpt.textContent = 'All hotels';
-    hotelSelect.appendChild(allOpt);
+    allOpt.value = ''; allOpt.textContent = 'All clients';
+    clientSelect.appendChild(allOpt);
   }
-  HOTELS.forEach(h => {
+  CLIENTS.forEach(c => {
     const opt = document.createElement('option');
-    opt.value = h.hotel_id; opt.textContent = `${h.name} (${h.city})`;
-    hotelSelect.appendChild(opt);
+    opt.value = c.client_id; opt.textContent = `${c.name} (${c.city})`;
+    clientSelect.appendChild(opt);
   });
   roleTag.textContent = role === 'supervisor' ? 'Supervisor' : 'Head of supervisors';
 }
 
-roleSelect.addEventListener('change', () => { renderHotelOptions(); loadDashboard(); });
-hotelSelect.addEventListener('change', loadDashboard);
+roleSelect.addEventListener('change', () => { renderClientOptions(); loadDashboard(); });
+clientSelect.addEventListener('change', loadDashboard);
 
 async function loadDashboard(){
-  const {role, hotel_id} = currentScope();
+  const {role, client_id} = currentScope();
   dashCards.innerHTML = `<div class="metric-card"><div class="val">…</div><div class="lbl">Loading</div></div>`;
   try {
     const res = await fetch(`${API}/api/dashboard`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({user_role: role, hotel_id, days: 7})
+      body: JSON.stringify({user_role: role, client_id, days: 7})
     });
     if(!res.ok) throw new Error(await res.text());
     const d = await res.json();
@@ -183,10 +183,10 @@ async function loadDashboard(){
 }
 
 function renderDashboard(d, role){
-  const totalHours = d.total_hours_by_hotel.reduce((s,r)=>s+r.total_hours,0).toFixed(0);
+  const totalHours = d.total_hours_by_client.reduce((s,r)=>s+r.total_hours,0).toFixed(0);
   const headcount = d.headcount.reduce((s,r)=>s+r.active_headcount,0);
-  const avgAbsentee = (d.absentee.by_hotel.reduce((s,r)=>s+r.absentee_rate_pct,0)/d.absentee.by_hotel.length).toFixed(1);
-  const avgPass = d.inspections.by_hotel.filter(r=>r.pass_rate_pct!=null);
+  const avgAbsentee = (d.absentee.by_client.reduce((s,r)=>s+r.absentee_rate_pct,0)/d.absentee.by_client.length).toFixed(1);
+  const avgPass = d.inspections.by_client.filter(r=>r.pass_rate_pct!=null);
   const passRate = avgPass.length ? (avgPass.reduce((s,r)=>s+r.pass_rate_pct,0)/avgPass.length).toFixed(1) : '—';
 
   dashCards.innerHTML = `
