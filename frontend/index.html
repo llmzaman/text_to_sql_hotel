@@ -125,9 +125,13 @@
 <script>
 const API = "";
 let CLIENTS = [];
+let SUPERVISORS = [];
+let TEAM_CLIENTS = [];
 let history = [];
 
 const roleSelect = document.getElementById('roleSelect');
+const supervisorSelect = document.getElementById('supervisorSelect');
+const supervisorLabel = document.getElementById('supervisorLabel');
 const clientSelect = document.getElementById('clientSelect');
 const clientLabel = document.getElementById('clientLabel');
 const roleTag = document.getElementById('roleTag');
@@ -138,45 +142,81 @@ const chatInput = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
 const dashCards = document.getElementById('dashCards');
 
+function activeClientList(){
+  return roleSelect.value === 'team_supervisor' ? TEAM_CLIENTS : CLIENTS;
+}
+
 function currentScope(){
   const role = roleSelect.value;
-  const client_id = role === 'supervisor' ? parseInt(clientSelect.value) : (clientSelect.value ? parseInt(clientSelect.value) : null);
-  const client = CLIENTS.find(c => c.client_id === client_id);
-  return { role, client_id, client_name: client ? client.name : null };
+  const client_id = clientSelect.value ? parseInt(clientSelect.value) : null;
+  const client = activeClientList().find(c => c.client_id === client_id);
+  const supervisor_id = role === 'team_supervisor' && supervisorSelect.value ? parseInt(supervisorSelect.value) : null;
+  return { role, client_id, client_name: client ? client.name : null, supervisor_id };
 }
 
 async function loadClients(){
   const res = await fetch(`${API}/api/clients`);
   CLIENTS = await res.json();
-  renderClientOptions();
+}
+
+async function loadSupervisors(){
+  const res = await fetch(`${API}/api/supervisors`);
+  SUPERVISORS = await res.json();
+  supervisorSelect.innerHTML = '';
+  SUPERVISORS.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.supervisor_id; opt.textContent = s.name;
+    supervisorSelect.appendChild(opt);
+  });
+}
+
+async function loadTeamClients(){
+  const sid = supervisorSelect.value;
+  TEAM_CLIENTS = sid ? await (await fetch(`${API}/api/supervisors/${sid}/clients`)).json() : [];
 }
 
 function renderClientOptions(){
   const role = roleSelect.value;
   clientSelect.innerHTML = '';
-  if (role === 'head_supervisor') {
+  if (role === 'head_supervisor' || role === 'team_supervisor') {
     const allOpt = document.createElement('option');
-    allOpt.value = ''; allOpt.textContent = 'All clients';
+    allOpt.value = ''; allOpt.textContent = role === 'team_supervisor' ? 'All my clients' : 'All clients';
     clientSelect.appendChild(allOpt);
   }
-  CLIENTS.forEach(c => {
+  activeClientList().forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.client_id; opt.textContent = `${c.name} (${c.city})`;
     clientSelect.appendChild(opt);
   });
-  roleTag.textContent = role === 'supervisor' ? 'Supervisor' : 'Head of supervisors';
+  const roleLabels = {supervisor: 'Supervisor', team_supervisor: 'Supervisor', head_supervisor: 'Head of supervisors'};
+  roleTag.textContent = roleLabels[role];
 }
 
-roleSelect.addEventListener('change', () => { renderClientOptions(); loadDashboard(); });
+async function onRoleChange(){
+  const role = roleSelect.value;
+  supervisorLabel.style.display = role === 'team_supervisor' ? '' : 'none';
+  if (role === 'team_supervisor') {
+    await loadTeamClients();
+  }
+  renderClientOptions();
+  loadDashboard();
+}
+
+roleSelect.addEventListener('change', onRoleChange);
+supervisorSelect.addEventListener('change', async () => { await loadTeamClients(); renderClientOptions(); loadDashboard(); });
 clientSelect.addEventListener('change', loadDashboard);
 
 async function loadDashboard(){
-  const {role, client_id} = currentScope();
+  const {role, client_id, supervisor_id} = currentScope();
+  if (role === 'team_supervisor' && !supervisor_id) {
+    dashCards.innerHTML = `<div class="metric-card warn"><div class="val">—</div><div class="lbl">No supervisors found</div></div>`;
+    return;
+  }
   dashCards.innerHTML = `<div class="metric-card"><div class="val">…</div><div class="lbl">Loading</div></div>`;
   try {
     const res = await fetch(`${API}/api/dashboard`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({user_role: role, client_id, days: 7})
+      body: JSON.stringify({user_role: role, client_id, supervisor_id, days: 7})
     });
     if(!res.ok) throw new Error(await res.text());
     const d = await res.json();
