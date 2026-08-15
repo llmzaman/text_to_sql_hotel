@@ -4,9 +4,12 @@ points at the real production HCMS Postgres — that's the client's live
 data (read-only for metrics), not a place to write our own app logs.
 Chat history is always a local SQLite file inside the container.
 
-Note: Railway's container filesystem is ephemeral without a mounted
-Volume — without one, this file (and its history) resets on every
-redeploy/restart.
+Lives under CHAT_HISTORY_DIR if set (a mounted Railway Volume — the
+container filesystem is otherwise ephemeral and resets on every
+redeploy/restart), falling back to backend/data for local dev. Deliberately
+NOT backend/data by default in prod: that path already holds the baked-in
+demo PDFs/RAG index/seed DB, and a volume mount there would replace them
+with an empty directory on first mount.
 """
 import json
 import os
@@ -14,7 +17,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+DATA_DIR = os.environ.get("CHAT_HISTORY_DIR") or os.path.join(os.path.dirname(__file__), "..", "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "chat_history.db")
 
