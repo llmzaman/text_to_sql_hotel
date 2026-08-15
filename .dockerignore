@@ -1,0 +1,10 @@
+.git
+.gitignore
+.serena
+.DS_Store
+__pycache__
+*.pyc
+.venv
+venv
+backend/.env
+README.md
