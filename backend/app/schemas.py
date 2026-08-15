@@ -17,8 +17,8 @@ class ChatTurnIn(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     user_role: Literal["supervisor", "head_supervisor"]
-    hotel_id: Optional[int] = None
-    hotel_name: Optional[str] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
     history: List[ChatTurnIn] = []
 
 
