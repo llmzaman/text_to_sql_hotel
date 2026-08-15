@@ -47,6 +47,44 @@ def list_clients():
         db.close()
 
 
+@app.get("/api/supervisors", response_model=list[SupervisorOut])
+def list_supervisors():
+    """Supervisors who have at least one client assignment in supervisor_client."""
+    db = SessionLocal()
+    try:
+        rows = db.execute(text("""
+            SELECT DISTINCT u.id, u."firstName" || ' ' || u."lastName" AS name
+            FROM supervisor_client sc JOIN users u ON u.id = sc."supervisorId"
+            ORDER BY name
+        """)).all()
+        return [SupervisorOut(supervisor_id=sid, name=name) for sid, name in rows]
+    finally:
+        db.close()
+
+
+@app.get("/api/supervisors/{supervisor_id}/clients", response_model=list[ClientOut])
+def supervisor_clients(supervisor_id: int):
+    """Clients a given supervisor is assigned to, per supervisor_client."""
+    db = SessionLocal()
+    try:
+        client_ids = supervisor_client_ids(db, supervisor_id)
+        if not client_ids:
+            return []
+        rows = db.execute(text("""
+            SELECT c.id, c."clientName", c."clientCity", COUNT(r.id) AS room_count
+            FROM client c LEFT JOIN rooms r ON r."clientId" = c.id
+            WHERE c.id = ANY(:ids) AND c."deletedAt" IS NULL
+            GROUP BY c.id, c."clientName", c."clientCity"
+            ORDER BY c.id
+        """), {"ids": client_ids}).all()
+        return [
+            ClientOut(client_id=cid, name=name, city=city, room_count=room_count)
+            for cid, name, city, room_count in rows
+        ]
+    finally:
+        db.close()
+
+
 @app.get("/api/metrics/glossary")
 def metrics_glossary():
     return METRIC_GLOSSARY
