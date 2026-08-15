@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CleanSweep Ops — Chat History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12181f; --ink-soft:#2a343f; --paper:#f5f6f4; --card:#ffffff;
+    --line:#e2e4e0; --teal:#0e7c66; --teal-soft:#e3f3ee; --teal-deep:#0a5c4c;
+    --amber:#c1791a; --red:#b3403a; --muted:#6b7280;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:0 24px;height:64px;background:var(--ink);color:#fff;border-bottom:1px solid #000;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:0.2px;}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(14,124,102,0.35);}
+  .topbar a{color:#c9d0d8;text-decoration:none;font-size:13px;border:1px solid #3a4552;border-radius:8px;padding:7px 12px;}
+  .topbar a:hover{background:#1e2732;color:#fff;}
+
+  main{max-width:880px;margin:0 auto;padding:28px 24px 60px;}
+  h1{font-size:20px;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:22px;}
+
+  .turn{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px;}
+  .turn .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:11.5px;color:var(--muted);}
+  .turn .tag{background:var(--teal-soft);color:var(--teal-deep);border-radius:20px;padding:3px 9px;font-weight:600;}
+  .turn .q{font-weight:600;margin-bottom:6px;}
+  .turn .a{color:var(--ink-soft);line-height:1.5;font-size:14px;}
+  .turn .tools{margin-top:10px;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px;}
+  .turn .tools span{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:2px 6px;margin-right:5px;font-family:'IBM Plex Mono',monospace;}
+
+  .empty{text-align:center;color:var(--muted);margin-top:80px;}
+  .loading{text-align:center;color:var(--muted);margin-top:80px;font-style:italic;}
+
+  #loadMoreBtn{display:block;margin:10px auto 0;background:var(--card);border:1px solid var(--line);
+    border-radius:9px;padding:9px 18px;font-size:13px;color:var(--ink-soft);cursor:pointer;}
+  #loadMoreBtn:hover{border-color:var(--teal);background:var(--teal-soft);}
+  #loadMoreBtn:disabled{opacity:.5;cursor:default;}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span> CleanSweep Ops · Chat History</div>
+    <a href="/">← Back to chat</a>
+  </div>
+  <main>
+    <h1>Chat history</h1>
+    <div class="sub">Every question asked through the chat agent, most recent first.</div>
+    <div id="list"><div class="loading">Loading…</div></div>
+    <button id="loadMoreBtn" style="display:none">Load more</button>
+  </main>
+
+<script>
+const API = "";
+const PAGE_SIZE = 30;
+let offset = 0;
+const list = document.getElementById('list');
+const loadMoreBtn = document.getElementById('loadMoreBtn');
+
+function fmtTime(iso){
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString();
+}
+
+function roleLabel(t){
+  if (t.user_role === 'supervisor') return `Client supervisor${t.client_name ? ' · ' + t.client_name : ''}`;
+  if (t.user_role === 'team_supervisor') return `Supervisor${t.client_name ? ' · ' + t.client_name : ' · all clients'}`;
+  return 'Head of supervisors';
+}
+
+function renderTurn(t){
+  const div = document.createElement('div');
+  div.className = 'turn';
+  const toolsHtml = (t.tools_used && t.tools_used.length)
+    ? `<div class="tools">Tools used: ${t.tools_used.map(x => `<span>${x}</span>`).join('')}</div>`
+    : '';
+  div.innerHTML = `
+    <div class="meta">
+      <span class="tag">${roleLabel(t)}</span>
+      <span>${fmtTime(t.created_at)}</span>
+      ${t.chart ? '<span class="tag">chart</span>' : ''}
+    </div>
+    <div class="q">${escapeHtml(t.question)}</div>
+    <div class="a">${escapeHtml(t.answer).replace(/\n/g,'<br>')}</div>
+    ${toolsHtml}
+  `;
+  return div;
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+}
+
+async function loadPage(){
+  loadMoreBtn.disabled = true;
+  const res = await fetch(`${API}/api/chat/history?limit=${PAGE_SIZE}&offset=${offset}`);
+  const turns = await res.json();
+
+  if (offset === 0) list.innerHTML = '';
+  if (offset === 0 && turns.length === 0) {
+    list.innerHTML = '<div class="empty">No chat history yet — ask something on the chat page.</div>';
+    loadMoreBtn.style.display = 'none';
+    return;
+  }
+
+  turns.forEach(t => list.appendChild(renderTurn(t)));
+  offset += turns.length;
+  loadMoreBtn.style.display = turns.length < PAGE_SIZE ? 'none' : 'block';
+  loadMoreBtn.disabled = false;
+}
+
+loadMoreBtn.addEventListener('click', loadPage);
+loadPage();
+</script>
+</body>
+</html>
