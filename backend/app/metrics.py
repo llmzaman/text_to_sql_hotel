@@ -78,11 +78,15 @@ _HOURS_EXPR = (
 
 
 def supervisor_client_ids(db, supervisor_id):
-    """Client ids a given supervisor is assigned to, per supervisor_client."""
-    rows = db.execute(
-        text('SELECT "clientId" FROM supervisor_client WHERE "supervisorId" = :sid ORDER BY "clientId"'),
-        {"sid": supervisor_id},
-    ).all()
+    """Client ids a given supervisor is assigned to, per supervisor_client
+    (excluding soft-deleted clients, consistent with the head_supervisor
+    "all clients" scope)."""
+    rows = db.execute(text("""
+        SELECT sc."clientId" FROM supervisor_client sc
+        JOIN client c ON c.id = sc."clientId"
+        WHERE sc."supervisorId" = :sid AND c."deletedAt" IS NULL
+        ORDER BY sc."clientId"
+    """), {"sid": supervisor_id}).all()
     return [r[0] for r in rows]
 
 
