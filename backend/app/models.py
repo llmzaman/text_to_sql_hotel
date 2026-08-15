@@ -98,7 +98,7 @@ class Inspection(Base):
     inspection_id = Column(Integer, primary_key=True)
     task_id = Column(Integer, ForeignKey("tasks.task_id"))
     checker_id = Column(Integer, ForeignKey("users.user_id"))
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     result = Column(String)  # pass | fail | needs_rework
     score = Column(Float)  # 0-100
     inspected_at = Column(DateTime)
