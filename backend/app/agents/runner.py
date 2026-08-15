@@ -35,7 +35,7 @@ async def answer_question(
     messages.append(HumanMessage(content=question))
 
     async with mcp_db_tools() as mcp_tools:
-        agent = build_agent(mcp_tools, role, hotel_id, hotel_name)
+        agent = build_agent(mcp_tools, role, client_id, client_name)
         result = await agent.ainvoke({"messages": messages})
 
     out_messages = result["messages"]
