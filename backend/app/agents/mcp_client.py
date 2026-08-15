@@ -27,6 +27,12 @@ async def mcp_db_tools():
         command="python3",
         args=["-m", "app.mcp_server.db_mcp_server"],
         cwd=BACKEND_DIR,
+        # mcp's stdio_client does NOT inherit the parent process's
+        # environment by default (it sandboxes to a small allowlist for
+        # security) — without this, DATABASE_URL/OPENAI_API_KEY etc. are
+        # invisible to the subprocess and it silently falls back to
+        # whatever database.py's default is.
+        env=os.environ.copy(),
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
