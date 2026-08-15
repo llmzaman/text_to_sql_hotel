@@ -82,7 +82,7 @@ class Shift(Base):
 class Task(Base):
     __tablename__ = "tasks"
     task_id = Column(Integer, primary_key=True)
-    hotel_id = Column(Integer, ForeignKey("hotels.hotel_id"))
+    client_id = Column(Integer, ForeignKey("clients.client_id"))
     room_id = Column(Integer, ForeignKey("rooms.room_id"))
     assigned_to = Column(Integer, ForeignKey("users.user_id"))
     task_type = Column(String, nullable=False)  # cleaning | checking
