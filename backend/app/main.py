@@ -28,14 +28,14 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/api/hotels", response_model=list[HotelOut])
-def list_hotels():
+@app.get("/api/clients", response_model=list[ClientOut])
+def list_clients():
     db = SessionLocal()
     try:
-        hotels = db.query(Hotel).all()
+        clients = db.query(Client).all()
         return [
-            HotelOut(hotel_id=h.hotel_id, name=h.name, city=h.city, room_count=h.room_count)
-            for h in hotels
+            ClientOut(client_id=c.client_id, name=c.name, city=c.city, room_count=c.room_count)
+            for c in clients
         ]
     finally:
         db.close()
