@@ -28,14 +28,14 @@ from mcp.server.fastmcp import FastMCP
 
 from app.metrics import METRIC_GLOSSARY, run_metric
 
-mcp = FastMCP("hotel-workforce-db")
+mcp = FastMCP("client-workforce-db")
 
 
 
 @mcp.tool()
 def get_schema_glossary() -> str:
     """Return the list of available business metrics, what each one means,
-    and what parameters it accepts (hotel_id, role, date range). Call this
+    and what parameters it accepts (client_id, role, date range). Call this
     first if you're unsure which metric name to use in run_metric_query."""
     return json.dumps(METRIC_GLOSSARY, indent=2)
 
@@ -44,29 +44,29 @@ def get_schema_glossary() -> str:
 def run_metric_query(
     metric: str,
     role: str,
-    hotel_id: int | None = None,
+    client_id: int | None = None,
     days: int = 7,
     limit: int = 10,
 ) -> str:
     """Run a whitelisted, parameterized business metric query against the
-    hotel workforce database and return JSON results.
+    client workforce database and return JSON results.
 
     Args:
         metric: one of the metric names from get_schema_glossary, e.g.
-            "total_hours_by_hotel", "top_workers_by_hours",
+            "total_hours_by_client", "top_workers_by_hours",
             "absentee_rate", "inspection_pass_rate", "headcount_active",
             "overtime_hours_by_worker", "hours_trend_daily".
         role: "supervisor" or "head_supervisor". Enforces row-level access:
-            a supervisor's queries are always restricted to their own hotel_id
-            regardless of what hotel_id is passed in.
-        hotel_id: restrict to a single hotel. Required for supervisor role.
-            Head supervisors may omit it to see all hotels.
+            a supervisor's queries are always restricted to their own client_id
+            regardless of what client_id is passed in.
+        client_id: restrict to a single client. Required for supervisor role.
+            Head supervisors may omit it to see all clients.
         days: size of the trailing date window, e.g. 7 for "last week", 30
             for "last month".
         limit: max rows to return for ranking-style metrics.
     """
     try:
-        result = run_metric(metric=metric, role=role, hotel_id=hotel_id, days=days, limit=limit)
+        result = run_metric(metric=metric, role=role, client_id=client_id, days=days, limit=limit)
         return json.dumps(result, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
