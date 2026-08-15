@@ -18,8 +18,10 @@ The FastAPI backend launches this as a subprocess via stdio (see
 app/agents/mcp_client.py).
 """
 import json
+import logging
 import os
 import sys
+import traceback
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -29,6 +31,7 @@ from mcp.server.fastmcp import FastMCP
 from app.metrics import METRIC_GLOSSARY, run_metric
 
 mcp = FastMCP("client-workforce-db")
+logger = logging.getLogger("db_mcp_server")
 
 
 
