@@ -45,6 +45,7 @@ def run_metric_query(
     metric: str,
     role: str,
     client_id: int | None = None,
+    supervisor_id: int | None = None,
     days: int = 7,
     limit: int = 10,
 ) -> str:
@@ -56,17 +57,26 @@ def run_metric_query(
             "total_hours_by_client", "top_workers_by_hours",
             "absentee_rate", "inspection_pass_rate", "headcount_active",
             "overtime_hours_by_worker", "hours_trend_daily".
-        role: "supervisor" or "head_supervisor". Enforces row-level access:
-            a supervisor's queries are always restricted to their own client_id
-            regardless of what client_id is passed in.
+        role: "supervisor", "team_supervisor", or "head_supervisor". Enforces
+            row-level access:
+              - supervisor: always restricted to their own client_id.
+              - team_supervisor: restricted to the clients assigned to
+                supervisor_id via supervisor_client, regardless of what
+                client_id is passed in.
+              - head_supervisor: unrestricted.
         client_id: restrict to a single client. Required for supervisor role.
-            Head supervisors may omit it to see all clients.
+            For team_supervisor, must be one of that supervisor's assigned
+            clients if given, otherwise all their clients are used. Head
+            supervisors may omit it to see all clients.
+        supervisor_id: required for team_supervisor role — identifies which
+            supervisor's client assignments to scope to.
         days: size of the trailing date window, e.g. 7 for "last week", 30
             for "last month".
         limit: max rows to return for ranking-style metrics.
     """
     try:
-        result = run_metric(metric=metric, role=role, client_id=client_id, days=days, limit=limit)
+        result = run_metric(metric=metric, role=role, client_id=client_id,
+                             supervisor_id=supervisor_id, days=days, limit=limit)
         return json.dumps(result, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
