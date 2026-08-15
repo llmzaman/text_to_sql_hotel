@@ -9,23 +9,33 @@ We call llm.bind_tools(...) directly here, which is the exact call the
 diagnostic confirmed works reliably, so tools reliably reach the model
 as real function definitions.
 
-Runs on OpenAI (not Groq) — Groq's free/on-demand tier caps out at a low
+Both OpenAI and Groq are wired up; LLM_PROVIDER picks which one runs
+(defaults to "openai"). Groq's free/on-demand tier caps out at a low
 shared tokens-per-minute budget (6-12k TPM across the account) and its
 smaller/free-tier models were unreliable at real tool-calling (silently
-echoing the call as text instead of invoking it). OpenAI has much higher
-default rate limits and solid tool-calling.
+echoing the call as text instead of invoking it) — OpenAI has much higher
+default rate limits and solid tool-calling, hence the default.
 """
 import os
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
 from app.agents.tools import LOCAL_TOOLS
 
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
+
+def _build_llm():
+    if LLM_PROVIDER == "groq":
+        return ChatGroq(model=GROQ_MODEL, temperature=0.2, max_retries=4)
+    return ChatOpenAI(model=OPENAI_MODEL, temperature=0.2, max_retries=4)
 
 
 class AgentState(TypedDict):
