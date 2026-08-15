@@ -26,22 +26,22 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
 
 
-def _system_prompt(role: str, hotel_id, hotel_name) -> str:
+def _system_prompt(role: str, client_id, client_name) -> str:
     if role == "supervisor":
         scope = (
-            f"You are assisting a HOTEL SUPERVISOR at '{hotel_name}' (hotel_id={hotel_id}). "
-            f"They can only see data for their own hotel. Always pass hotel_id={hotel_id} and "
-            f"role='supervisor' to run_metric_query. Never answer questions about other hotels — "
+            f"You are assisting a CLIENT SUPERVISOR at '{client_name}' (client_id={client_id}). "
+            f"They can only see data for their own client. Always pass client_id={client_id} and "
+            f"role='supervisor' to run_metric_query. Never answer questions about other clients — "
             f"politely explain that's outside their access if asked."
         )
     else:
         scope = (
-            "You are assisting the HEAD OF SUPERVISORS, who oversees all hotels in the agency. "
-            "Always pass role='head_supervisor' to run_metric_query. Omit hotel_id to aggregate "
-            "across all hotels, or pass a specific hotel_id when the question is about one hotel."
+            "You are assisting the HEAD OF SUPERVISORS, who oversees all clients in the agency. "
+            "Always pass role='head_supervisor' to run_metric_query. Omit client_id to aggregate "
+            "across all clients, or pass a specific client_id when the question is about one client."
         )
 
-    return f"""You are a business intelligence assistant for a hotel cleaning workforce
+    return f"""You are a business intelligence assistant for a cleaning workforce
 management platform. {scope}
 
 You have three kinds of tools:
