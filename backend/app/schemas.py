@@ -38,5 +38,5 @@ class ChatResponse(BaseModel):
 
 class DashboardRequest(BaseModel):
     user_role: Literal["supervisor", "head_supervisor"]
-    hotel_id: Optional[int] = None
+    client_id: Optional[int] = None
     days: int = 7
