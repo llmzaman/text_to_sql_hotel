@@ -9,8 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.database import SessionLocal
-from app.metrics import run_metric, METRIC_GLOSSARY
-from app.schemas import ChatRequest, ChatResponse, DashboardRequest, ClientOut
+from app.metrics import run_metric, supervisor_client_ids, METRIC_GLOSSARY
+from app.schemas import ChatRequest, ChatResponse, DashboardRequest, ClientOut, SupervisorOut
 from app.agents.runner import answer_question
 
 app = FastAPI(title="Client Workforce Agentic RAG API")
