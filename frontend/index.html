@@ -351,6 +351,14 @@ document.querySelectorAll('.suggested-q').forEach(btn => {
   btn.addEventListener('click', () => ask(btn.dataset.q));
 });
 
+clearChatBtn.addEventListener('click', () => {
+  history = [];
+  Array.from(chatlog.children).forEach(child => {
+    if (child !== emptyState) child.remove();
+  });
+  emptyState.style.display = '';
+});
+
 async function ask(question){
   chatInput.value = '';
   sendBtn.disabled = true;
