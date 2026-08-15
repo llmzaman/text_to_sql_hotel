@@ -6,7 +6,7 @@ boundary that any MCP-compatible client (this app's LangGraph agent, but
 also Claude Desktop, another agent, etc.) can call without knowing SQL or
 the schema internals. Two tools are exposed:
 
-  - run_metric_query(metric, hotel_id, role, ...): executes one of a
+  - run_metric_query(metric, client_id, role, ...): executes one of a
     whitelisted set of pre-defined, parameterized queries (the "semantic
     layer" from the design doc). This is what keeps the LLM from having to
     freehand SQL against a live production database.
