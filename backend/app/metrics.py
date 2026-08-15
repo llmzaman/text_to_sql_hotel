@@ -77,12 +77,37 @@ _HOURS_EXPR = (
 )
 
 
-def _resolve_client_scope(db, role: str, client_id):
-    """Enforces row-level access: supervisors are pinned to their client."""
+def supervisor_client_ids(db, supervisor_id):
+    """Client ids a given supervisor is assigned to, per supervisor_client."""
+    rows = db.execute(
+        text('SELECT "clientId" FROM supervisor_client WHERE "supervisorId" = :sid ORDER BY "clientId"'),
+        {"sid": supervisor_id},
+    ).all()
+    return [r[0] for r in rows]
+
+
+def _resolve_client_scope(db, role: str, client_id, supervisor_id=None):
+    """Enforces row-level access:
+    - supervisor: pinned to a single client_id.
+    - team_supervisor: pinned to the set of clients assigned to them via
+      supervisor_client; an explicit client_id must be one of their own.
+    - head_supervisor: all clients, or a single one if specified.
+    """
     if role == "supervisor":
         if client_id is None:
             raise ValueError("supervisor role requires a client_id")
         return [client_id]
+    if role == "team_supervisor":
+        if supervisor_id is None:
+            raise ValueError("team_supervisor role requires a supervisor_id")
+        assigned = supervisor_client_ids(db, supervisor_id)
+        if client_id is not None:
+            if client_id not in assigned:
+                raise ValueError("client_id is not assigned to this supervisor")
+            return [client_id]
+        if not assigned:
+            raise ValueError("this supervisor has no assigned clients")
+        return assigned
     # head_supervisor: all clients, or a single one if specified
     if client_id is not None:
         return [client_id]
@@ -90,13 +115,13 @@ def _resolve_client_scope(db, role: str, client_id):
     return [r[0] for r in rows]
 
 
-def run_metric(metric: str, role: str, client_id=None, days: int = 7, limit: int = 10):
+def run_metric(metric: str, role: str, client_id=None, supervisor_id=None, days: int = 7, limit: int = 10):
     if metric not in METRIC_GLOSSARY:
         raise ValueError(f"Unknown metric '{metric}'. Valid metrics: {list(METRIC_GLOSSARY)}")
 
     db = SessionLocal()
     try:
-        client_ids = _resolve_client_scope(db, role, client_id)
+        client_ids = _resolve_client_scope(db, role, client_id, supervisor_id)
         since = date.today() - timedelta(days=days)
         fn = _METRIC_FUNCS[metric]
         return fn(db, client_ids, since, limit)
