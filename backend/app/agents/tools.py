@@ -48,7 +48,7 @@ class ChartSpec(BaseModel):
 def emit_chart(chart_type: str, title: str, labels: List[str], values: List[float], series_label: str = "Value") -> str:
     """Request a chart be shown to the user in the UI, on top of your text
     answer. Use this whenever a comparison, ranking, or trend over time
-    would be clearer as a chart than as text (e.g. 'compare hotels', 'top
+    would be clearer as a chart than as text (e.g. 'compare clients', 'top
     workers by hours', 'hours trend this week'). chart_type must be one of
     'bar', 'line', or 'pie'. labels and values must be the same length."""
     spec = ChartSpec(chart_type=chart_type, title=title, labels=labels, values=values, series_label=series_label)
