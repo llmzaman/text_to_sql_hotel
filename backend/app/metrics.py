@@ -9,16 +9,25 @@ consistent (one definition of "top workers", reused everywhere) and safe
 Row-level security: every function takes `role` + `client_id` and a
 supervisor's `client_id` is always enforced server-side, never trusted from
 the caller/LLM alone.
+
+Queries here run against the real HCMS production schema (client, users,
+worker_shifts, attendance_history, room_history, rooms, worker_types) via
+read-only raw SQL — the schema doesn't map onto a simple ORM model, and
+column names are quoted camelCase throughout.
+
+Data-quality note: a small number of attendance_history rows have a
+checkOut days after checkIn (forgotten checkout). Per-shift hours are
+capped at 16h so those outliers don't blow up aggregates.
 """
 from datetime import date, timedelta
-from sqlalchemy import func, and_, case
+
+from sqlalchemy import text
 
 from app.database import SessionLocal
-from app.models import Client, User, Shift, Task, Inspection, Leave
 
 METRIC_GLOSSARY = {
     "total_hours_by_client": {
-        "description": "Total actual hours worked, split by cleaning-staff vs checking-staff headcount, per client, over the trailing N days.",
+        "description": "Total actual hours worked (from check-in/check-out), split by cleaning-staff vs checking-staff, per client, over the trailing N days.",
         "params": ["client_id (optional for head_supervisor)", "days"],
     },
     "hours_trend_daily": {
@@ -26,31 +35,31 @@ METRIC_GLOSSARY = {
         "params": ["client_id (required)", "days"],
     },
     "top_workers_by_hours": {
-        "description": "Ranks active cleaners/checkers by total actual hours worked over the trailing N days.",
+        "description": "Ranks workers by total actual hours worked over the trailing N days.",
         "params": ["client_id (optional for head_supervisor)", "days", "limit"],
     },
     "top_workers_by_tasks": {
-        "description": "Ranks cleaners by number of completed cleaning tasks (rooms cleaned) over the trailing N days.",
+        "description": "Ranks cleaners by number of rooms marked clean over the trailing N days.",
         "params": ["client_id (optional for head_supervisor)", "days", "limit"],
     },
     "headcount_active": {
-        "description": "Count of distinct active workers (cleaners+checkers) who worked at least one shift in the trailing N days, per client.",
+        "description": "Count of distinct workers with a scheduled shift in the trailing N days, per client.",
         "params": ["client_id (optional for head_supervisor)", "days"],
     },
     "absentee_rate": {
-        "description": "Absence rate = absent shift-days / total scheduled shift-days, per client, over the trailing N days. Also returns top absent workers.",
+        "description": "Absence rate = scheduled shifts with no matching check-in / total scheduled shifts, per client, over the trailing N days. Also returns top absent workers.",
         "params": ["client_id (optional for head_supervisor)", "days"],
     },
     "inspection_pass_rate": {
-        "description": "Inspection pass rate per client over the trailing N days, plus per-checker breakdown.",
+        "description": "Room-inspection pass rate per client over the trailing N days (rooms marked clean / rooms checked), plus per-checker breakdown.",
         "params": ["client_id (optional for head_supervisor)", "days"],
     },
     "overtime_hours_by_worker": {
-        "description": "Workers with the most overtime hours over the trailing N days.",
+        "description": "Workers with the most hours worked beyond their assigned/scheduled hours over the trailing N days.",
         "params": ["client_id (optional for head_supervisor)", "days", "limit"],
     },
     "worker_fail_rate": {
-        "description": "Cleaners ranked by inspection fail rate over the trailing N days — flags workers needing coaching.",
+        "description": "Cleaners ranked by inspection fail rate (rooms left unclean after check) over the trailing N days — flags workers needing coaching.",
         "params": ["client_id (optional for head_supervisor)", "days", "limit"],
     },
     "client_comparison_summary": {
@@ -58,6 +67,14 @@ METRIC_GLOSSARY = {
         "params": ["days"],
     },
 }
+
+# Per-shift hours worked, floored at 0 and capped at 16 to absorb bad data
+# (forgotten checkouts spanning multiple days).
+_HOURS_EXPR = (
+    'GREATEST(LEAST('
+    'EXTRACT(EPOCH FROM (ah."checkOut" - ah."checkIn"))/3600.0 - COALESCE(ah."breakTime", 0)/60.0'
+    ', 16), 0)'
+)
 
 
 def _resolve_client_scope(db, role: str, client_id):
@@ -69,7 +86,8 @@ def _resolve_client_scope(db, role: str, client_id):
     # head_supervisor: all clients, or a single one if specified
     if client_id is not None:
         return [client_id]
-    return [c.client_id for c in db.query(Client).all()]
+    rows = db.execute(text('SELECT id FROM client WHERE "deletedAt" IS NULL ORDER BY id')).all()
+    return [r[0] for r in rows]
 
 
 def run_metric(metric: str, role: str, client_id=None, days: int = 7, limit: int = 10):
@@ -87,20 +105,37 @@ def run_metric(metric: str, role: str, client_id=None, days: int = 7, limit: int
 
 
 def _client_name_map(db, client_ids):
-    rows = db.query(Client).filter(Client.client_id.in_(client_ids)).all()
-    return {c.client_id: c.name for c in rows}
+    if not client_ids:
+        return {}
+    rows = db.execute(
+        text('SELECT id, "clientName" FROM client WHERE id = ANY(:ids)'), {"ids": client_ids}
+    ).all()
+    return {r[0]: r[1] for r in rows}
 
 
 def _m_total_hours_by_client(db, client_ids, since, limit):
     names = _client_name_map(db, client_ids)
     out = []
     for cid in client_ids:
-        cleaning = db.query(func.coalesce(func.sum(Shift.actual_hours), 0)).join(
-            User, User.user_id == Shift.user_id
-        ).filter(Shift.client_id == cid, Shift.work_date >= since, User.role == "cleaner").scalar()
-        checking = db.query(func.coalesce(func.sum(Shift.actual_hours), 0)).join(
-            User, User.user_id == Shift.user_id
-        ).filter(Shift.client_id == cid, Shift.work_date >= since, User.role == "checker").scalar()
+        cleaning = db.execute(text(f"""
+            SELECT COALESCE(SUM({_HOURS_EXPR}), 0)
+            FROM worker_shifts ws
+            JOIN attendance_history ah ON ah."userId" = ws."workerId" AND ah.date = ws.date
+            LEFT JOIN worker_types wt ON wt.id = ws."workerTypeId"
+            WHERE ws."clientId" = :cid AND ws.date >= :since
+              AND ah."checkIn" IS NOT NULL AND ah."checkOut" IS NOT NULL
+              AND wt.name IS DISTINCT FROM 'checker'
+        """), {"cid": cid, "since": since}).scalar()
+        checking = db.execute(text(f"""
+            SELECT COALESCE(SUM({_HOURS_EXPR}), 0)
+            FROM worker_shifts ws
+            JOIN attendance_history ah ON ah."userId" = ws."workerId" AND ah.date = ws.date
+            JOIN worker_types wt ON wt.id = ws."workerTypeId"
+            WHERE ws."clientId" = :cid AND ws.date >= :since
+              AND ah."checkIn" IS NOT NULL AND ah."checkOut" IS NOT NULL
+              AND wt.name = 'checker'
+        """), {"cid": cid, "since": since}).scalar()
+        cleaning, checking = float(cleaning), float(checking)
         out.append({
             "client": names.get(cid), "client_id": cid,
             "cleaning_hours": round(cleaning, 1), "checking_hours": round(checking, 1),
@@ -111,36 +146,50 @@ def _m_total_hours_by_client(db, client_ids, since, limit):
 
 def _m_hours_trend_daily(db, client_ids, since, limit):
     cid = client_ids[0]
-    rows = (
-        db.query(Shift.work_date, func.coalesce(func.sum(Shift.actual_hours), 0))
-        .filter(Shift.client_id == cid, Shift.work_date >= since)
-        .group_by(Shift.work_date).order_by(Shift.work_date).all()
-    )
-    data = [{"date": str(d), "hours": round(h, 1)} for d, h in rows]
+    rows = db.execute(text(f"""
+        SELECT ws.date, COALESCE(SUM({_HOURS_EXPR}), 0)
+        FROM worker_shifts ws
+        JOIN attendance_history ah ON ah."userId" = ws."workerId" AND ah.date = ws.date
+        WHERE ws."clientId" = :cid AND ws.date >= :since
+          AND ah."checkIn" IS NOT NULL AND ah."checkOut" IS NOT NULL
+        GROUP BY ws.date ORDER BY ws.date
+    """), {"cid": cid, "since": since}).all()
+    data = [{"date": str(d), "hours": round(float(h), 1)} for d, h in rows]
     return {"metric": "hours_trend_daily", "client_id": cid, "data": data}
 
 
 def _m_top_workers_by_hours(db, client_ids, since, limit):
-    rows = (
-        db.query(User.full_name, User.role, Client.name, func.coalesce(func.sum(Shift.actual_hours), 0).label("hrs"))
-        .join(Shift, Shift.user_id == User.user_id)
-        .join(Client, Client.client_id == User.client_id)
-        .filter(Shift.client_id.in_(client_ids), Shift.work_date >= since, User.role.in_(["cleaner", "checker"]))
-        .group_by(User.user_id).order_by(func.sum(Shift.actual_hours).desc()).limit(limit).all()
-    )
-    data = [{"worker": n, "role": r, "client": c, "hours": round(hrs, 1)} for n, r, c, hrs in rows]
+    rows = db.execute(text(f"""
+        SELECT u.id, u."firstName" || ' ' || u."lastName" AS worker,
+               COALESCE(wt."displayName", 'Worker') AS worker_type,
+               c."clientName" AS client, COALESCE(SUM({_HOURS_EXPR}), 0) AS hrs
+        FROM worker_shifts ws
+        JOIN attendance_history ah ON ah."userId" = ws."workerId" AND ah.date = ws.date
+        JOIN users u ON u.id = ws."workerId"
+        JOIN client c ON c.id = ws."clientId"
+        LEFT JOIN worker_types wt ON wt.id = ws."workerTypeId"
+        WHERE ws."clientId" = ANY(:cids) AND ws.date >= :since
+          AND ah."checkIn" IS NOT NULL AND ah."checkOut" IS NOT NULL
+        GROUP BY u.id, worker, worker_type, client
+        ORDER BY hrs DESC LIMIT :limit
+    """), {"cids": client_ids, "since": since, "limit": limit}).all()
+    data = [{"worker": w, "role": wt, "client": c, "hours": round(float(h), 1)} for _, w, wt, c, h in rows]
     return {"metric": "top_workers_by_hours", "data": data}
 
 
 def _m_top_workers_by_tasks(db, client_ids, since, limit):
-    rows = (
-        db.query(User.full_name, Client.name, func.count(Task.task_id).label("n"))
-        .join(Task, Task.assigned_to == User.user_id)
-        .join(Client, Client.client_id == User.client_id)
-        .filter(Task.client_id.in_(client_ids), Task.work_date >= since, Task.task_type == "cleaning", Task.status == "completed")
-        .group_by(User.user_id).order_by(func.count(Task.task_id).desc()).limit(limit).all()
-    )
-    data = [{"worker": n, "client": c, "rooms_cleaned": cnt} for n, c, cnt in rows]
+    rows = db.execute(text("""
+        SELECT u.id, u."firstName" || ' ' || u."lastName" AS worker,
+               c."clientName" AS client, COUNT(rh.id) AS n
+        FROM room_history rh
+        JOIN worker_shifts ws ON ws.id = rh."workerShiftId"
+        JOIN users u ON u.id = ws."workerId"
+        JOIN client c ON c.id = ws."clientId"
+        WHERE ws."clientId" = ANY(:cids) AND rh.date >= :since AND rh.status = 'clean'
+        GROUP BY u.id, worker, client
+        ORDER BY n DESC LIMIT :limit
+    """), {"cids": client_ids, "since": since, "limit": limit}).all()
+    data = [{"worker": w, "client": c, "rooms_cleaned": n} for _, w, c, n in rows]
     return {"metric": "top_workers_by_tasks", "data": data}
 
 
@@ -148,11 +197,10 @@ def _m_headcount_active(db, client_ids, since, limit):
     names = _client_name_map(db, client_ids)
     out = []
     for cid in client_ids:
-        n = (
-            db.query(func.count(func.distinct(Shift.user_id)))
-            .filter(Shift.client_id == cid, Shift.work_date >= since, Shift.status != "absent")
-            .scalar()
-        )
+        n = db.execute(text("""
+            SELECT COUNT(DISTINCT "workerId") FROM worker_shifts
+            WHERE "clientId" = :cid AND date >= :since
+        """), {"cid": cid, "since": since}).scalar()
         out.append({"client": names.get(cid), "client_id": cid, "active_headcount": n})
     return {"metric": "headcount_active", "data": out}
 
@@ -161,76 +209,101 @@ def _m_absentee_rate(db, client_ids, since, limit):
     names = _client_name_map(db, client_ids)
     out = []
     for cid in client_ids:
-        total = db.query(func.count(Shift.shift_id)).filter(Shift.client_id == cid, Shift.work_date >= since).scalar()
-        absent = db.query(func.count(Shift.shift_id)).filter(
-            Shift.client_id == cid, Shift.work_date >= since, Shift.status == "absent"
-        ).scalar()
+        total = db.execute(text("""
+            SELECT COUNT(*) FROM worker_shifts WHERE "clientId" = :cid AND date >= :since
+        """), {"cid": cid, "since": since}).scalar()
+        absent = db.execute(text("""
+            SELECT COUNT(*) FROM worker_shifts ws
+            WHERE ws."clientId" = :cid AND ws.date >= :since
+              AND NOT EXISTS (
+                SELECT 1 FROM attendance_history ah
+                WHERE ah."userId" = ws."workerId" AND ah.date = ws.date AND ah."checkIn" IS NOT NULL
+              )
+        """), {"cid": cid, "since": since}).scalar()
         rate = round(100 * absent / total, 1) if total else 0.0
         out.append({"client": names.get(cid), "client_id": cid, "absentee_rate_pct": rate,
                      "absent_shift_days": absent, "total_shift_days": total})
 
-    top_absent = (
-        db.query(User.full_name, Client.name, func.count(Shift.shift_id).label("n"))
-        .join(Shift, Shift.user_id == User.user_id)
-        .join(Client, Client.client_id == User.client_id)
-        .filter(Shift.client_id.in_(client_ids), Shift.work_date >= since, Shift.status == "absent")
-        .group_by(User.user_id).order_by(func.count(Shift.shift_id).desc()).limit(5).all()
-    )
+    top_absent = db.execute(text("""
+        SELECT u.id, u."firstName" || ' ' || u."lastName" AS worker, COUNT(*) AS n
+        FROM worker_shifts ws
+        JOIN users u ON u.id = ws."workerId"
+        WHERE ws."clientId" = ANY(:cids) AND ws.date >= :since
+          AND NOT EXISTS (
+            SELECT 1 FROM attendance_history ah
+            WHERE ah."userId" = ws."workerId" AND ah.date = ws.date AND ah."checkIn" IS NOT NULL
+          )
+        GROUP BY u.id, worker ORDER BY n DESC LIMIT 5
+    """), {"cids": client_ids, "since": since}).all()
     return {"metric": "absentee_rate", "by_client": out,
-            "top_absent_workers": [{"worker": n, "client": c, "absences": cnt} for n, c, cnt in top_absent]}
+            "top_absent_workers": [{"worker": w, "absences": n} for _, w, n in top_absent]}
 
 
 def _m_inspection_pass_rate(db, client_ids, since, limit):
     names = _client_name_map(db, client_ids)
     out = []
     for cid in client_ids:
-        total = db.query(func.count(Inspection.inspection_id)).filter(
-            Inspection.client_id == cid, Inspection.inspected_at >= since
-        ).scalar()
-        passed = db.query(func.count(Inspection.inspection_id)).filter(
-            Inspection.client_id == cid, Inspection.inspected_at >= since, Inspection.result == "pass"
-        ).scalar()
+        total = db.execute(text("""
+            SELECT COUNT(*) FROM room_history rh JOIN rooms r ON r.id = rh."roomId"
+            WHERE r."clientId" = :cid AND rh."isChecked" = true AND rh.date >= :since
+        """), {"cid": cid, "since": since}).scalar()
+        passed = db.execute(text("""
+            SELECT COUNT(*) FROM room_history rh JOIN rooms r ON r.id = rh."roomId"
+            WHERE r."clientId" = :cid AND rh."isChecked" = true AND rh.date >= :since AND rh.status = 'clean'
+        """), {"cid": cid, "since": since}).scalar()
         rate = round(100 * passed / total, 1) if total else None
         out.append({"client": names.get(cid), "client_id": cid, "pass_rate_pct": rate, "inspections": total})
 
-    by_checker = (
-        db.query(User.full_name, func.count(Inspection.inspection_id).label("n"),
-                  func.avg(Inspection.score).label("avg_score"))
-        .join(Inspection, Inspection.checker_id == User.user_id)
-        .filter(Inspection.client_id.in_(client_ids), Inspection.inspected_at >= since)
-        .group_by(User.user_id).order_by(func.count(Inspection.inspection_id).desc()).limit(limit).all()
-    )
+    by_checker = db.execute(text("""
+        SELECT u.id, u."firstName" || ' ' || u."lastName" AS checker,
+               COUNT(*) AS n, SUM(CASE WHEN rh.status = 'clean' THEN 1 ELSE 0 END) AS passed
+        FROM room_history rh
+        JOIN rooms r ON r.id = rh."roomId"
+        JOIN worker_shifts ws ON ws.id = rh."checkerShiftId"
+        JOIN users u ON u.id = ws."workerId"
+        WHERE r."clientId" = ANY(:cids) AND rh."isChecked" = true AND rh.date >= :since
+        GROUP BY u.id, checker ORDER BY n DESC LIMIT :limit
+    """), {"cids": client_ids, "since": since, "limit": limit}).all()
     return {"metric": "inspection_pass_rate", "by_client": out,
-            "by_checker": [{"checker": n, "inspections": c, "avg_score": round(a, 1) if a else None} for n, c, a in by_checker]}
+            "by_checker": [{"checker": c, "inspections": n,
+                             "pass_rate_pct": round(100 * p / n, 1) if n else None} for _, c, n, p in by_checker]}
 
 
 def _m_overtime_hours_by_worker(db, client_ids, since, limit):
-    rows = (
-        db.query(User.full_name, Client.name, func.coalesce(func.sum(Shift.actual_hours - Shift.scheduled_hours), 0).label("ot"))
-        .join(Shift, Shift.user_id == User.user_id)
-        .join(Client, Client.client_id == User.client_id)
-        .filter(Shift.client_id.in_(client_ids), Shift.work_date >= since, Shift.shift_type == "overtime")
-        .group_by(User.user_id).order_by(func.sum(Shift.actual_hours - Shift.scheduled_hours).desc()).limit(limit).all()
-    )
-    data = [{"worker": n, "client": c, "overtime_hours": round(ot, 1)} for n, c, ot in rows]
+    rows = db.execute(text(f"""
+        SELECT u.id, u."firstName" || ' ' || u."lastName" AS worker, c."clientName" AS client,
+               COALESCE(SUM(GREATEST({_HOURS_EXPR} - COALESCE(ws."assignHours", 0), 0)), 0) AS ot
+        FROM worker_shifts ws
+        JOIN attendance_history ah ON ah."userId" = ws."workerId" AND ah.date = ws.date
+        JOIN users u ON u.id = ws."workerId"
+        JOIN client c ON c.id = ws."clientId"
+        WHERE ws."clientId" = ANY(:cids) AND ws.date >= :since
+          AND ah."checkIn" IS NOT NULL AND ah."checkOut" IS NOT NULL
+        GROUP BY u.id, worker, client
+        ORDER BY ot DESC LIMIT :limit
+    """), {"cids": client_ids, "since": since, "limit": limit}).all()
+    data = [{"worker": w, "client": c, "overtime_hours": round(float(ot), 1)} for _, w, c, ot in rows]
     return {"metric": "overtime_hours_by_worker", "data": data}
 
 
 def _m_worker_fail_rate(db, client_ids, since, limit):
-    rows = (
-        db.query(User.full_name, Client.name,
-                  func.count(Inspection.inspection_id).label("total"),
-                  func.sum(case((Inspection.result == "fail", 1), else_=0)).label("fails"))
-        .join(Task, Task.task_id == Inspection.task_id)
-        .join(User, User.user_id == Task.assigned_to)
-        .join(Client, Client.client_id == User.client_id)
-        .filter(Inspection.client_id.in_(client_ids), Inspection.inspected_at >= since)
-        .group_by(User.user_id).having(func.count(Inspection.inspection_id) >= 3)
-        .order_by((func.sum(case((Inspection.result == "fail", 1), else_=0)) * 1.0 / func.count(Inspection.inspection_id)).desc())
-        .limit(limit).all()
-    )
-    data = [{"worker": n, "client": c, "inspections": t, "fails": f,
-             "fail_rate_pct": round(100 * f / t, 1) if t else 0} for n, c, t, f in rows]
+    rows = db.execute(text("""
+        SELECT u.id, u."firstName" || ' ' || u."lastName" AS worker, c."clientName" AS client,
+               COUNT(*) AS total, SUM(CASE WHEN rh.status = 'unclean' THEN 1 ELSE 0 END) AS fails
+        FROM room_history rh
+        JOIN rooms r ON r.id = rh."roomId"
+        JOIN worker_shifts ws ON ws.id = rh."workerShiftId"
+        JOIN users u ON u.id = ws."workerId"
+        JOIN client c ON c.id = ws."clientId"
+        WHERE ws."clientId" = ANY(:cids) AND rh."isChecked" = true AND rh.date >= :since
+          AND rh.status IN ('clean', 'unclean')
+        GROUP BY u.id, worker, client
+        HAVING COUNT(*) >= 3
+        ORDER BY (SUM(CASE WHEN rh.status = 'unclean' THEN 1 ELSE 0 END)::float / COUNT(*)) DESC
+        LIMIT :limit
+    """), {"cids": client_ids, "since": since, "limit": limit}).all()
+    data = [{"worker": w, "client": c, "inspections": t, "fails": f,
+             "fail_rate_pct": round(100 * f / t, 1) if t else 0} for _, w, c, t, f in rows]
     return {"metric": "worker_fail_rate", "data": data}
 
 
